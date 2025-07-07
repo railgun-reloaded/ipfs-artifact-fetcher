@@ -9,8 +9,8 @@
     "lint:fix": "eslint --fix",
     "build": "tsc --build",
     "clean": "tsc --build --clean",
-    "test": "npm run build && node --test ./test/*.test.js",
-    "test:only": "npm run build && node --test-only ./test/*.test.js"
+    "test": "tsx --test ./test/*.test.ts",
+    "test:only": "tsx --test-only ./test/*.test.ts"
   },
   "repository": {
     "type": "git",
@@ -34,10 +34,15 @@
     "@types/debug": "^4.1.12",
     "@types/node": "^22.13.10",
     "eslint": "^9.22.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.8.2"
   },
   "dependencies": {
+    "@helia/block-brokers": "^4.2.2",
+    "@helia/http": "^2.1.2",
+    "@helia/routers": "^3.1.2",
     "@helia/unixfs": "^5.0.3",
+    "axios": "^1.10.0",
     "debug": "^4.4.1",
     "helia": "^5.4.2",
     "multiformats": "^13.3.7"

@@ -1,13 +1,19 @@
-import { unixfs } from '@helia/unixfs'
+import { trustlessGateway } from '@helia/block-brokers'
+import { createHeliaHTTP } from '@helia/http'
+import { httpGatewayRouting } from '@helia/routers'
+import type { unixfs } from '@helia/unixfs'
+import { unixfs as createUnixfs } from '@helia/unixfs'
 import debug from 'debug'
 import { createHelia } from 'helia'
 import { CID } from 'multiformats/cid'
 
-import { ArtifactName, RAILGUN_ARTIFACTS_CID_ROOT } from './definitions.js'
+import { RAILGUN_ARTIFACTS_CID_ROOT } from './definitions.js'
 
 const dbg = debug('artifact-fetcher:downloader')
 
-let heliaNode: Awaited<ReturnType<typeof createHelia>> | undefined
+type HeliaNode = Awaited<ReturnType<typeof createHelia>> | Awaited<ReturnType<typeof createHeliaHTTP>>
+
+let heliaNode: HeliaNode | undefined
 let fs: ReturnType<typeof unixfs> | undefined
 
 /**
@@ -21,46 +27,54 @@ function isDefined (value: any): value is NonNullable<any> {
 
 /**
  * Initializes the Helia node and UnixFS API if not already initialized.
+ * @param useHTTP Optional boolean to use HTTP transport for Helia.
+ * @returns A promise that resolves to an object containing the Helia node and UnixFS API.
  */
-async function initHelia () {
-  if (!heliaNode) {
-    heliaNode = await createHelia()
-    fs = unixfs(heliaNode)
+async function initHelia (useHTTP?: boolean) {
+  console.log('useHTTP:', useHTTP)
+  if (heliaNode) {
+    return { heliaNode, fs }
   }
-}
 
-// /**
-//  * Creates a string representation of the artifact variant based on nullifiers and commitments.
-//  * @param nullifiers The number of nullifiers in the artifact.
-//  * @param commitments The number of commitments in the artifact.
-//  * @returns A string in the format "nullifiersXcommitments".
-//  */
-// const getArtifactVariantString = (
-//   nullifiers: number,
-//   commitments: number
-// ) => {
-//   return `${nullifiers}x${commitments}`
-// }
+  // Create Helia with optimized block brokers
+  heliaNode = useHTTP
+    ? await createHeliaHTTP()
+    : await createHelia({
+      blockBrokers: [trustlessGateway()],
+      routers: [httpGatewayRouting({ gateways: ['https://ipfs-lb.com'] })],
+    })
+
+  // UnixFS allows you to encode files and directories such that they are
+  // addressed by CIDs and can be retrieved by other nodes on the network
+  fs = createUnixfs(heliaNode)
+
+  return { heliaNode, fs }
+}
 
 /**
  * Downloads the vkey, zkey, and wasm artifacts for a given artifact variant string.
  * @param artifactVariantString The string representing the artifact variant (e.g., "2x16").
+ * @returns An object containing the vkey, zkey, and wasm artifacts as Uint8Arrays.
  */
-async function downloadArtifactsForVariant (artifactVariantString: string) {
+async function downloadArtifactsForVariant (artifactVariantString: string): Promise<{
+  vkey: Uint8Array
+  zkey: Uint8Array
+  wasm: Uint8Array
+}> {
   dbg(`Downloading artifacts: ${artifactVariantString}`)
 
   const [vkeyPath, zkeyPath, wasmPath] = await Promise.all([
     fetchFromIPFS(
-      RAILGUN_ARTIFACTS_CID_ROOT,
-      ArtifactName.VKEY + artifactVariantString
+      RAILGUN_ARTIFACTS_CID_ROOT
+      // ArtifactName.VKEY + artifactVariantString
     ),
     fetchFromIPFS(
-      RAILGUN_ARTIFACTS_CID_ROOT,
-      ArtifactName.ZKEY + artifactVariantString
+      RAILGUN_ARTIFACTS_CID_ROOT
+      // ArtifactName.ZKEY + artifactVariantString
     ),
     fetchFromIPFS(
-      RAILGUN_ARTIFACTS_CID_ROOT,
-      ArtifactName.WASM + artifactVariantString
+      RAILGUN_ARTIFACTS_CID_ROOT
+      // ArtifactName.WASM + artifactVariantString
     ),
   ])
 
@@ -73,17 +87,23 @@ async function downloadArtifactsForVariant (artifactVariantString: string) {
   if (!isDefined(wasmPath)) {
     throw new Error('Could not download wasm artifact.')
   }
+
+  return {
+    vkey: vkeyPath,
+    zkey: zkeyPath,
+    wasm: wasmPath,
+  }
 }
 
 /**
  * Fetches a file from IPFS using the root CID and file path.
  * @param rootCid The root CID string (e.g., 'QmeBrG7pii1qTqsn7rusvDiqXopHPjCT9gR4PsmW7wXqZq')
- * @param path The file path inside the CID (e.g., '2x16/zkey.br')
+ * @param path The specific file path within the IPFS root CID (optional).
  * @returns The full file as a Uint8Array
  */
 async function fetchFromIPFS (
   rootCid: string,
-  path: string
+  path?: string
 ): Promise<Uint8Array> {
   // Initialize Helia and UnixFS API if not already done
   await initHelia()
@@ -91,27 +111,33 @@ async function fetchFromIPFS (
   // Ensure the Helia UnixFS API is initialized
   if (!fs) throw new Error('Helia UnixFS not initialized')
 
+  // Parse only the root CID, not the concatenated path
+  const cid = CID.parse(rootCid)
+
+  console.log(`Fetching from IPFS CID: ${cid.toString()}${path ? `/${path}` : ''}`)
+
+  // Add timeout wrapper
+  const contents = path ? fs.cat(cid, { path }) : fs.cat(cid)
+
+  // Collect all chunks from the async iterator
   // Parse the root CID separately
-  const rootCID = CID.parse(rootCid)
   const chunks: Uint8Array[] = []
 
   // Use the UnixFS API to navigate to the specific path within the CID
-  for await (const chunk of fs.cat(rootCID, { path })) {
+  for await (const chunk of contents) {
     chunks.push(chunk)
   }
-  console.log('chunks', chunks)
 
-  // Flatten the chunks into a single Uint8Array
-  const totalLength = chunks.reduce((len, c) => len + c.length, 0)
-  const out = new Uint8Array(totalLength)
+  // Combine all chunks into a single Uint8Array
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
+  const result = new Uint8Array(totalLength)
   let offset = 0
-
   for (const chunk of chunks) {
-    out.set(chunk, offset)
+    result.set(chunk, offset)
     offset += chunk.length
   }
 
-  return out
+  return result
 }
 
 export { fetchFromIPFS, downloadArtifactsForVariant, initHelia }
