@@ -7,7 +7,7 @@ import debug from 'debug'
 import { createHelia } from 'helia'
 import { CID } from 'multiformats/cid'
 
-import { RAILGUN_ARTIFACTS_CID_ROOT } from './definitions.js'
+import { ArtifactName, RAILGUN_ARTIFACTS_CID_ROOT } from './definitions.js'
 
 const dbg = debug('artifact-fetcher:downloader')
 
@@ -59,23 +59,23 @@ async function initHelia (useHTTP?: boolean) {
 async function downloadArtifactsForVariant (artifactVariantString: string): Promise<{
   vkey: Uint8Array
   zkey: Uint8Array
-  wasm: Uint8Array
+  // wasm: Uint8Array
 }> {
   dbg(`Downloading artifacts: ${artifactVariantString}`)
 
-  const [vkeyPath, zkeyPath, wasmPath] = await Promise.all([
+  const [vkeyPath, zkeyPath] = await Promise.all([
     fetchFromIPFS(
-      RAILGUN_ARTIFACTS_CID_ROOT
-      // ArtifactName.VKEY + artifactVariantString
+      RAILGUN_ARTIFACTS_CID_ROOT,
+        `${artifactVariantString}/${ArtifactName.VKEY}.json`
     ),
     fetchFromIPFS(
-      RAILGUN_ARTIFACTS_CID_ROOT
-      // ArtifactName.ZKEY + artifactVariantString
+      RAILGUN_ARTIFACTS_CID_ROOT,
+        `${artifactVariantString}/${ArtifactName.ZKEY}`
     ),
-    fetchFromIPFS(
-      RAILGUN_ARTIFACTS_CID_ROOT
-      // ArtifactName.WASM + artifactVariantString
-    ),
+    // fetchFromIPFS(
+    //   RAILGUN_ARTIFACTS_CID_ROOT,
+    //   `${artifactVariantString}/${ArtifactName.WASM}`
+    // ),
   ])
 
   if (!isDefined(vkeyPath)) {
@@ -84,14 +84,14 @@ async function downloadArtifactsForVariant (artifactVariantString: string): Prom
   if (!isDefined(zkeyPath)) {
     throw new Error('Could not download zkey artifact.')
   }
-  if (!isDefined(wasmPath)) {
-    throw new Error('Could not download wasm artifact.')
-  }
+  // if (!isDefined(wasmPath)) {
+  //   throw new Error('Could not download wasm artifact.')
+  // }
 
   return {
     vkey: vkeyPath,
     zkey: zkeyPath,
-    wasm: wasmPath,
+    // wasm: wasmPath,
   }
 }
 
@@ -103,7 +103,7 @@ async function downloadArtifactsForVariant (artifactVariantString: string): Prom
  */
 async function fetchFromIPFS (
   rootCid: string,
-  path?: string
+  path: string
 ): Promise<Uint8Array> {
   // Initialize Helia and UnixFS API if not already done
   await initHelia()
@@ -116,14 +116,11 @@ async function fetchFromIPFS (
 
   console.log(`Fetching from IPFS CID: ${cid.toString()}${path ? `/${path}` : ''}`)
 
-  // Add timeout wrapper
-  const contents = path ? fs.cat(cid, { path }) : fs.cat(cid)
+  // Fetch the contents of the CID using the UnixFS API
+  const contents = fs.cat(cid, { path })
 
   // Collect all chunks from the async iterator
-  // Parse the root CID separately
   const chunks: Uint8Array[] = []
-
-  // Use the UnixFS API to navigate to the specific path within the CID
   for await (const chunk of contents) {
     chunks.push(chunk)
   }
