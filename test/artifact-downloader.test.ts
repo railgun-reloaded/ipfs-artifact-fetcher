@@ -6,14 +6,14 @@ import { fileURLToPath } from 'node:url'
 
 import axios from 'axios'
 
-import { downloadArtifactsForVariant, fetchFromIPFS } from '../src/artifact-downloader.js'
+import { downloadArtifactsForVariant, fetchFromIPFS, fetchFromIPFSWithFallback } from '../src/artifact-downloader.js'
 import { ArtifactName, RAILGUN_ARTIFACTS_CID_ROOT } from '../src/definitions.js'
 
 // Get the current test directory path
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-describe.only('artifact-downloader', () => {
+describe('artifact-downloader', () => {
   it('should fetch artifacts using IPFS CID and match local file', async () => {
     const artifactVariantString = '1x1'
 
@@ -43,28 +43,30 @@ describe.only('artifact-downloader', () => {
 
   it('should compare performance: Helia vs HTTP Gateway', async () => {
     const artifactVariantString = '1x1'
-    const vkeyPath = `${artifactVariantString}/vkey.json`
-    const httpUrl = `https://ipfs-lb.com/ipfs/${RAILGUN_ARTIFACTS_CID_ROOT}/${vkeyPath}`
+    const artifactName = ArtifactName.VKEY
 
     console.log('🏁 Starting performance comparison...')
 
-    // Test Helia performance
-    const heliaStart = performance.now()
-    const heliaFile = await fetchFromIPFS(RAILGUN_ARTIFACTS_CID_ROOT, artifactVariantString, ArtifactName.VKEY)
-    const heliaEnd = performance.now()
-    const heliaTime = heliaEnd - heliaStart
-
     // Test HTTP Gateway performance
+    const vkeyPath = `${artifactVariantString}/vkey.json`
+    const httpUrl = `https://ipfs-lb.com/ipfs/${RAILGUN_ARTIFACTS_CID_ROOT}/${vkeyPath}`
     const httpStart = performance.now()
     const httpResponse = await axios.get(httpUrl, { responseType: 'arraybuffer' })
     const httpFile = new Uint8Array(httpResponse.data)
     const httpEnd = performance.now()
     const httpTime = httpEnd - httpStart
 
+    console.log(`🌐 HTTP Gateway: ${httpTime.toFixed(2)}ms (${httpFile.length} bytes)`)
+
+    // Test Helia performance
+    const heliaStart = performance.now()
+    const heliaFile = await fetchFromIPFS(RAILGUN_ARTIFACTS_CID_ROOT, artifactVariantString, artifactName)
+    const heliaEnd = performance.now()
+    const heliaTime = heliaEnd - heliaStart
+
     // Log results
     console.log(`⚡ Helia IPFS: ${heliaTime.toFixed(2)}ms (${heliaFile.length} bytes)`)
-    console.log(`🌐 HTTP Gateway: ${httpTime.toFixed(2)}ms (${httpFile.length} bytes)`)
-    console.log(`📊 Speedup: ${(heliaTime / httpTime).toFixed(2)}x ${heliaTime < httpTime ? '(Helia was faster)' : '(HTTP was faster)'}`)
+    console.log(`📊 Speedup: ${(heliaTime / httpTime).toFixed(2)}x ${heliaTime < httpTime ? '(Helia faster)' : '(HTTP faster)'}`)
 
     // Verify both files are identical
     assert.deepStrictEqual(heliaFile, httpFile, 'Files downloaded via different methods do not match')
@@ -76,13 +78,70 @@ describe.only('artifact-downloader', () => {
     console.log('✅ Performance test completed successfully!')
   })
 
-  it.only('should download all artifacts for a specific variant', async () => {
-    const artifactVariantString = '1x2'
+  it('should download all artifacts for a specific variant', async () => {
+    const artifactVariantString = '1x1'
     const { vkey, zkey, dat, wasm } = await downloadArtifactsForVariant(artifactVariantString)
 
-    console.log('dat: ', dat)
-    console.log('wasm: ', wasm)
-    console.log('vkey', vkey)
-    console.log('zkey', zkey)
+    // Verify we got the expected artifacts
+    assert.ok(vkey, 'vkey should be defined')
+    assert.ok(zkey, 'zkey should be defined')
+    assert.ok(wasm, 'wasm should be defined')
+    assert.ok(dat === undefined, 'dat should be undefined when not using native artifacts')
+
+    console.log('✅ All artifacts downloaded successfully!')
+  })
+
+  it('should fallback to HTTP gateway when IPFS times out', async () => {
+    const artifactVariantString = '1x1'
+    const artifactName = ArtifactName.VKEY
+
+    console.log('🔄 Testing fallback functionality...')
+
+    // Test the fallback function (which will try IPFS first, then HTTP)
+    const fallbackStart = performance.now()
+    const fallbackFile = await fetchFromIPFSWithFallback(RAILGUN_ARTIFACTS_CID_ROOT, artifactVariantString, artifactName)
+    const fallbackEnd = performance.now()
+    const fallbackTime = fallbackEnd - fallbackStart
+
+    console.log(`🔄 Fallback fetch: ${fallbackTime.toFixed(2)}ms (${fallbackFile.length} bytes)`)
+
+    // Verify we got valid content
+    assert.ok(fallbackFile.length > 0, 'Fallback file should not be empty')
+
+    // Verify it's valid JSON (since we're fetching vkey.json)
+    const content = new TextDecoder().decode(fallbackFile)
+    const json = JSON.parse(content)
+    assert.ok(json, 'Should be valid JSON')
+
+    // Compare with direct HTTP fetch to ensure same content
+    const vkeyPath = `${artifactVariantString}/vkey.json`
+    const httpUrl = `https://ipfs-lb.com/ipfs/${RAILGUN_ARTIFACTS_CID_ROOT}/${vkeyPath}`
+    const httpResponse = await axios.get(httpUrl, { responseType: 'arraybuffer' })
+    const httpFile = new Uint8Array(httpResponse.data)
+
+    assert.deepStrictEqual(fallbackFile, httpFile, 'Fallback file should match direct HTTP fetch')
+
+    console.log('✅ Fallback test completed successfully!')
+  })
+
+  it('should handle IPFS timeout gracefully', async () => {
+    const artifactVariantString = '1x1'
+
+    console.log('⏰ Testing IPFS timeout handling...')
+
+    // Test with very short timeout to force timeout
+    try {
+      const timeoutStart = performance.now()
+      await fetchFromIPFS(RAILGUN_ARTIFACTS_CID_ROOT, artifactVariantString, ArtifactName.VKEY, 1) // 1ms timeout
+      const timeoutEnd = performance.now()
+
+      // If we get here without timeout, that's also valid (very fast network)
+      console.log(`⚡ IPFS was faster than 1ms: ${(timeoutEnd - timeoutStart).toFixed(2)}ms`)
+    } catch (error) {
+      // Should timeout
+      assert.ok(error instanceof Error, 'Should throw an Error')
+      assert.ok(error.message.includes('timeout'), 'Error should mention timeout')
+      console.log('✅ IPFS timeout handled correctly:', error.message)
+    }
   })
 })

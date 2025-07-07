@@ -1,12 +1,10 @@
 import { createHash } from 'node:crypto'
 
-import { trustlessGateway } from '@helia/block-brokers'
 import { createHeliaHTTP } from '@helia/http'
-import { httpGatewayRouting } from '@helia/routers'
 import type { unixfs } from '@helia/unixfs'
 import { unixfs as createUnixfs } from '@helia/unixfs'
+import axios from 'axios'
 import debug from 'debug'
-import { createHelia } from 'helia'
 import { CID } from 'multiformats/cid'
 
 import type { Artifact, ArtifactHashesJson } from './definitions.js'
@@ -16,29 +14,22 @@ import { isDefined } from './json/utils.js'
 
 const dbg = debug('artifact-fetcher:downloader')
 
-type HeliaNode = Awaited<ReturnType<typeof createHelia>> | Awaited<ReturnType<typeof createHeliaHTTP>>
+type HeliaNode = Awaited<ReturnType<typeof createHeliaHTTP>>
 
 let heliaNode: HeliaNode | undefined
 let fs: ReturnType<typeof unixfs> | undefined
 
 /**
  * Initializes the Helia node and UnixFS API if not already initialized.
- * @param useHTTP Optional boolean to use HTTP transport for Helia.
  * @returns A promise that resolves to an object containing the Helia node and UnixFS API.
  */
-async function initHelia (useHTTP?: boolean) {
-  dbg('useHTTP:', useHTTP)
+async function initHelia () {
   if (heliaNode) {
     return { heliaNode, fs }
   }
 
   // Create Helia with optimized block brokers
-  heliaNode = useHTTP
-    ? await createHeliaHTTP()
-    : await createHelia({
-      blockBrokers: [trustlessGateway()],
-      routers: [httpGatewayRouting({ gateways: ['https://ipfs-lb.com'] })],
-    })
+  heliaNode = await createHeliaHTTP()
 
   // UnixFS allows you to encode files and directories such that they are
   // addressed by CIDs and can be retrieved by other nodes on the network
@@ -127,17 +118,17 @@ async function downloadArtifactsForVariant (artifactVariantString: string): Prom
   const useNativeArtifacts = false // Replace with actual check if using native artifacts
 
   const [vkeyPath, zkeyPath, wasmOrDatPath] = await Promise.all([
-    fetchFromIPFS(
+    fetchFromIPFSWithFallback(
       RAILGUN_ARTIFACTS_CID_ROOT,
       artifactVariantString,
       ArtifactName.VKEY
     ),
-    fetchFromIPFS(
+    fetchFromIPFSWithFallback(
       RAILGUN_ARTIFACTS_CID_ROOT,
       artifactVariantString,
       ArtifactName.ZKEY
     ),
-    fetchFromIPFS(
+    fetchFromIPFSWithFallback(
       RAILGUN_ARTIFACTS_CID_ROOT,
       artifactVariantString,
       useNativeArtifacts ? ArtifactName.DAT : ArtifactName.WASM
@@ -193,16 +184,18 @@ function getPathForArtifactName (
 }
 
 /**
- * Fetches a file from IPFS using the root CID, artifact variant string, and artifact name.
+ * Fetches a file from IPFS using the root CID, artifact variant string, and artifact name with timeout.
  * @param rootCid The root CID string (e.g., 'QmeBrG7pii1qTqsn7rusvDiqXopHPjCT9gR4PsmW7wXqZq').
  * @param artifactVariantString The string representing the artifact variant (e.g., "2x16").
  * @param artifactName The name of the artifact to fetch.
+ * @param timeoutMs Timeout in milliseconds (default: 10000)
  * @returns The full file as a Uint8Array.
  */
 async function fetchFromIPFS (
   rootCid: string,
   artifactVariantString: string,
-  artifactName: ArtifactName
+  artifactName: ArtifactName,
+  timeoutMs: number = 10000
 ): Promise<Uint8Array> {
   // TODO: Make cache implementation and return path to cached file if it exists
 
@@ -215,37 +208,92 @@ async function fetchFromIPFS (
 
   dbg(`Fetching from IPFS CID: ${cid.toString()}${`/${path}`}`)
 
-  // Fetch the contents of the CID using the UnixFS API
-  const contents = fs.cat(cid, { path })
+  // Create timeout promise
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    setTimeout(() => reject(new Error(`IPFS fetch timeout after ${timeoutMs}ms`)), timeoutMs)
+  })
 
-  const chunks: Uint8Array[] = []
-  for await (const chunk of contents) {
-    chunks.push(chunk)
-  }
+  // Fetch with timeout
+  const fetchPromise = (async () => {
+    const contents = fs.cat(cid, { path })
 
-  // Combine all chunks into a single Uint8Array
-  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
-  const result = new Uint8Array(totalLength)
-  let offset = 0
-  for (const chunk of chunks) {
-    result.set(chunk, offset)
-    offset += chunk.length
-  }
+    const chunks: Uint8Array[] = []
+    for await (const chunk of contents) {
+      chunks.push(chunk)
+    }
 
-  const isValid = await validateArtifactDownload(
-    result,
-    artifactName,
-    artifactVariantString
-  )
+    const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
+    const result = new Uint8Array(totalLength)
+    let offset = 0
+    for (const chunk of chunks) {
+      result.set(chunk, offset)
+      offset += chunk.length
+    }
 
-  if (isValid) {
-    // TODO: Store it and return path where it was stored.
-    return result
-  } else {
-    throw new Error(
-      `Invalid hash for artifact download: ${artifactName} for ${artifactVariantString}.`
+    const isValid = await validateArtifactDownload(
+      result,
+      artifactName,
+      artifactVariantString
     )
+
+    if (isValid) {
+    // TODO: Store it and return path where it was stored.
+      return result
+    } else {
+      throw new Error(
+      `Invalid hash for artifact download: ${artifactName} for ${artifactVariantString}.`
+      )
+    }
+  })()
+
+  return await Promise.race([fetchPromise, timeoutPromise])
+}
+
+/**
+ * Fetches from IPFS with HTTP gateway fallback for reliability
+ * @param rootCid The root CID string (e.g., 'QmeBrG7pii1qTqsn7rusvDiqXopHPjCT9gR4PsmW7wXqZq')
+ * @param artifactVariantString The string representing the artifact variant (e.g., "2x16").
+ * @param artifactName The name of the artifact to fetch.
+ * @returns The full file as a Uint8Array
+ */
+async function fetchFromIPFSWithFallback (
+  rootCid: string,
+  artifactVariantString: string,
+  artifactName: ArtifactName
+): Promise<Uint8Array> {
+  try {
+    // Try IPFS first with 10s timeout
+    return await fetchFromIPFS(rootCid, artifactVariantString, artifactName, 10000)
+  } catch (error) {
+    dbg('IPFS fetch failed, falling back to HTTP gateway:', error)
+
+    // Fallback to direct HTTP gateway
+    const path = getPathForArtifactName(artifactName, artifactVariantString)
+    const httpUrl = `https://ipfs-lb.com/ipfs/${rootCid}/${path}`
+
+    const response = await axios.get(httpUrl, { responseType: 'arraybuffer' })
+    if (response.status !== 200) {
+      throw new Error(`HTTP fetch failed with status ${response.status}`)
+    }
+    dbg(`Fetched from HTTP gateway: ${httpUrl}`)
+
+    const result = new Uint8Array(response.data)
+
+    // Validate the downloaded artifact
+    const isValid = await validateArtifactDownload(
+      result,
+      artifactName,
+      artifactVariantString
+    )
+
+    if (isValid) {
+      return result
+    } else {
+      throw new Error(
+        `Invalid hash for artifact download: ${artifactName} for ${artifactVariantString}.`
+      )
+    }
   }
 }
 
-export { fetchFromIPFS, downloadArtifactsForVariant, initHelia, validateArtifactDownload }
+export { fetchFromIPFS, fetchFromIPFSWithFallback, downloadArtifactsForVariant, initHelia, validateArtifactDownload }
