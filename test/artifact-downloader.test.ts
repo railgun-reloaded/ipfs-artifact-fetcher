@@ -6,87 +6,83 @@ import { fileURLToPath } from 'node:url'
 
 import axios from 'axios'
 
-import { downloadArtifactsForVariant, fetchFromIPFS, initHelia } from '../src/artifact-downloader.js'
-import { RAILGUN_ARTIFACTS_CID_ROOT } from '../src/definitions.js'
+import { downloadArtifactsForVariant, fetchFromIPFS } from '../src/artifact-downloader.js'
+import { ArtifactName, RAILGUN_ARTIFACTS_CID_ROOT } from '../src/definitions.js'
 
 // Get the current test directory path
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-describe('artifact-downloader', () => {
-  describe('initHelia', () => {
-    it('should initialize Helia node and UnixFS API', async () => {
-      await initHelia()
-    })
+describe.only('artifact-downloader', () => {
+  it('should fetch artifacts using IPFS CID and match local file', async () => {
+    const artifactVariantString = '1x1'
 
-    it('should fetch artifacts using IPFS CID', async () => {
-      const artifactVariantString = '1x1'
-      const files = await downloadArtifactsForVariant(artifactVariantString)
+    // Fetch from IPFS
+    const downloadedFile = await fetchFromIPFS(RAILGUN_ARTIFACTS_CID_ROOT, artifactVariantString, ArtifactName.VKEY)
 
-      console.log(files)
-    })
+    // Read local file
+    const localFilePath = join(__dirname, '1x1-vkey.json')
+    const localFile = await readFile(localFilePath)
 
-    it('should fetch artifacts using IPFS CID and match local file', async () => {
-      const artifactVariantString = '1x1'
-      const vkeyPath = `${artifactVariantString}/vkey.json`
+    console.log('Downloaded file size:', downloadedFile.length)
+    console.log('Local file size:', localFile.length)
 
-      // Fetch from IPFS
-      const downloadedFile = await fetchFromIPFS(RAILGUN_ARTIFACTS_CID_ROOT, vkeyPath)
+    // Convert both to strings for easier comparison
+    const downloadedContent = new TextDecoder().decode(downloadedFile)
+    const localContent = new TextDecoder().decode(localFile)
 
-      // Read local file
-      const localFilePath = join(__dirname, '1x1-vkey.json')
-      const localFile = await readFile(localFilePath)
+    // Parse both as JSON to compare structure (ignoring whitespace differences)
+    const downloadedJson = JSON.parse(downloadedContent)
+    const localJson = JSON.parse(localContent)
 
-      console.log('Downloaded file size:', downloadedFile.length)
-      console.log('Local file size:', localFile.length)
+    // Assert they are equal
+    assert.deepStrictEqual(downloadedJson, localJson, 'Downloaded file does not match local file')
 
-      // Convert both to strings for easier comparison
-      const downloadedContent = new TextDecoder().decode(downloadedFile)
-      const localContent = new TextDecoder().decode(localFile)
+    console.log('✓ Files match!')
+  })
 
-      // Parse both as JSON to compare structure (ignoring whitespace differences)
-      const downloadedJson = JSON.parse(downloadedContent)
-      const localJson = JSON.parse(localContent)
+  it('should compare performance: Helia vs HTTP Gateway', async () => {
+    const artifactVariantString = '1x1'
+    const vkeyPath = `${artifactVariantString}/vkey.json`
+    const httpUrl = `https://ipfs-lb.com/ipfs/${RAILGUN_ARTIFACTS_CID_ROOT}/${vkeyPath}`
 
-      // Assert they are equal
-      assert.deepStrictEqual(downloadedJson, localJson, 'Downloaded file does not match local file')
+    console.log('🏁 Starting performance comparison...')
 
-      console.log('✓ Files match!')
-    })
+    // Test Helia performance
+    const heliaStart = performance.now()
+    const heliaFile = await fetchFromIPFS(RAILGUN_ARTIFACTS_CID_ROOT, artifactVariantString, ArtifactName.VKEY)
+    const heliaEnd = performance.now()
+    const heliaTime = heliaEnd - heliaStart
 
-    it.only('should compare performance: Helia vs HTTP Gateway', async () => {
-      const artifactVariantString = '1x1'
-      const vkeyPath = `${artifactVariantString}/vkey.json`
-      const httpUrl = `https://ipfs-lb.com/ipfs/${RAILGUN_ARTIFACTS_CID_ROOT}/${vkeyPath}`
+    // Test HTTP Gateway performance
+    const httpStart = performance.now()
+    const httpResponse = await axios.get(httpUrl, { responseType: 'arraybuffer' })
+    const httpFile = new Uint8Array(httpResponse.data)
+    const httpEnd = performance.now()
+    const httpTime = httpEnd - httpStart
 
-      console.log('🏁 Starting performance comparison...')
+    // Log results
+    console.log(`⚡ Helia IPFS: ${heliaTime.toFixed(2)}ms (${heliaFile.length} bytes)`)
+    console.log(`🌐 HTTP Gateway: ${httpTime.toFixed(2)}ms (${httpFile.length} bytes)`)
+    console.log(`📊 Speedup: ${(heliaTime / httpTime).toFixed(2)}x ${heliaTime < httpTime ? '(Helia was faster)' : '(HTTP was faster)'}`)
 
-      // Test Helia performance
-      const heliaStart = performance.now()
-      const heliaFile = await fetchFromIPFS(RAILGUN_ARTIFACTS_CID_ROOT, vkeyPath)
-      const heliaEnd = performance.now()
-      const heliaTime = heliaEnd - heliaStart
+    // Verify both files are identical
+    assert.deepStrictEqual(heliaFile, httpFile, 'Files downloaded via different methods do not match')
 
-      // Test HTTP Gateway performance
-      const httpStart = performance.now()
-      const httpResponse = await axios.get(httpUrl, { responseType: 'arraybuffer' })
-      const httpFile = new Uint8Array(httpResponse.data)
-      const httpEnd = performance.now()
-      const httpTime = httpEnd - httpStart
+    // Both should be reasonably fast (under 30 seconds for this test)
+    assert.ok(heliaTime < 30000, `Helia took too long: ${heliaTime}ms`)
+    assert.ok(httpTime < 30000, `HTTP took too long: ${httpTime}ms`)
 
-      // Log results
-      console.log(`⚡ Helia IPFS: ${heliaTime.toFixed(2)}ms (${heliaFile.length} bytes)`)
-      console.log(`🌐 HTTP Gateway: ${httpTime.toFixed(2)}ms (${httpFile.length} bytes)`)
-      console.log(`📊 Speedup: ${(heliaTime / httpTime).toFixed(2)}x ${heliaTime < httpTime ? '(Helia faster)' : '(HTTP faster)'}`)
+    console.log('✅ Performance test completed successfully!')
+  })
 
-      // Verify both files are identical
-      assert.deepStrictEqual(heliaFile, httpFile, 'Files downloaded via different methods do not match')
+  it.only('should download all artifacts for a specific variant', async () => {
+    const artifactVariantString = '1x1'
+    const { vkey, zkey, dat, wasm } = await downloadArtifactsForVariant(artifactVariantString)
 
-      // Both should be reasonably fast (under 30 seconds for this test)
-      assert.ok(heliaTime < 30000, `Helia took too long: ${heliaTime}ms`)
-      assert.ok(httpTime < 30000, `HTTP took too long: ${httpTime}ms`)
-
-      console.log('✅ Performance test completed successfully!')
-    })
+    console.log('dat: ', dat)
+    console.log('wasm: ', wasm)
+    console.log('vkey', vkey)
+    console.log('zkey', zkey)
   })
 })
