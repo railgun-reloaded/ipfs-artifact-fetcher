@@ -10,7 +10,7 @@ import { CID } from 'multiformats/cid'
 import type { Artifact, ArtifactHashesJson } from './definitions.js'
 import { ArtifactName, RAILGUN_ARTIFACTS_CID_ROOT } from './definitions.js'
 import ARTIFACT_V2_HASHES from './json/artifact-v2-hashes.json'
-import { isDefined } from './json/utils.js'
+import { isDefined } from './utils.js'
 
 const dbg = debug('artifact-fetcher:downloader')
 

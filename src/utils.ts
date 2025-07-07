@@ -1,4 +1,4 @@
-import type { BytesData } from '../definitions.js'
+import type { BytesData } from './definitions.js'
 
 /**
  * Ensure a value is not null or undefined.
