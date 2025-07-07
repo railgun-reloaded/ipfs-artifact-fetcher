@@ -81,11 +81,11 @@ const getExpectedArtifactHash = (
 }
 
 /**
- * Validates the downloaded artifact by comparing its hash to the expected value.
- * @param data The artifact data to validate.
- * @param artifactName The name of the artifact.
- * @param artifactVariantString The variant string of the artifact.
- * @returns A promise that resolves to true if the artifact is valid, false otherwise.
+ * Validates the downloaded artifact by comparing its SHA-256 hash to the expected value for the given artifact name and variant.
+ * @param data The artifact data as a Uint8Array.
+ * @param artifactName The name of the artifact being validated.
+ * @param artifactVariantString The variant string representing the artifact.
+ * @returns A promise that resolves to true if the artifact hash matches the expected value, otherwise throws an error.
  */
 async function validateArtifactDownload (
   data: Uint8Array<ArrayBufferLike>,
@@ -117,9 +117,9 @@ async function validateArtifactDownload (
 };
 
 /**
- * Downloads the vkey, zkey, and wasm artifacts for a given artifact variant string.
- * @param artifactVariantString The string representing the artifact variant (e.g., "2x16").
- * @returns An object containing vkeyPath, zkeyPath, and wasmPath as Uint8Array.
+ * Downloads all artifacts (vkey, zkey, wasm/dat) for a given artifact variant from IPFS.
+ * @param artifactVariantString The variant string representing the artifact variant.
+ * @returns A promise that resolves to an Artifact object containing the downloaded artifacts.
  */
 async function downloadArtifactsForVariant (artifactVariantString: string): Promise<Artifact> {
   dbg(`Downloading all artifacts for variant: ${artifactVariantString}`)
@@ -176,15 +176,19 @@ function getPathForArtifactName (
   artifactName: ArtifactName,
   artifactVariantString: string
 ) {
+  // TODO: When using the .br files, the hashes are different, don't delete the comments in this function.
   switch (artifactName) {
     case ArtifactName.WASM:
-      return `prover/snarkjs/${artifactVariantString}.${artifactName}.br`
+      // return `prover/snarkjs/${artifactVariantString}.${artifactName}.br`
+      return `prover/snarkjs/${artifactVariantString}.${artifactName}`
     case ArtifactName.ZKEY:
-      return `${artifactVariantString}/${artifactName}.br`
+      // return `${artifactVariantString}/${artifactName}.br`
+      return `${artifactVariantString}/${artifactName}`
     case ArtifactName.VKEY:
       return `${artifactVariantString}/${artifactName}.json`
     case ArtifactName.DAT:
-      return `prover/native/${artifactVariantString}.${artifactName}.br`
+      // return `prover/native/${artifactVariantString}.${artifactName}.br`
+      return `prover/native/${artifactVariantString}.${artifactName}`
   }
 }
 

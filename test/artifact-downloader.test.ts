@@ -77,7 +77,7 @@ describe.only('artifact-downloader', () => {
   })
 
   it.only('should download all artifacts for a specific variant', async () => {
-    const artifactVariantString = '1x1'
+    const artifactVariantString = '1x2'
     const { vkey, zkey, dat, wasm } = await downloadArtifactsForVariant(artifactVariantString)
 
     console.log('dat: ', dat)

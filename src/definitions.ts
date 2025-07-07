@@ -14,6 +14,7 @@ type Artifact = {
   dat: Optional<ArrayLike<number>>;
   vkey: ArrayLike<number>;
 }
+
  type BytesData = bigint | number | ArrayLike<number> | string
 
  type ArtifactHashesJson = Record<
