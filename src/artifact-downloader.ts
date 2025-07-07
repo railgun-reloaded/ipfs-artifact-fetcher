@@ -176,18 +176,15 @@ function getPathForArtifactName (
   artifactName: ArtifactName,
   artifactVariantString: string
 ) {
-  const useNativeArtifacts = false // Replace with actual check if using native artifacts
-  const proverType = useNativeArtifacts ? 'native' : 'snarkjs'
-
   switch (artifactName) {
     case ArtifactName.WASM:
-      return `prover/${proverType}/${artifactVariantString}.${artifactName}`
+      return `prover/snarkjs/${artifactVariantString}.${artifactName}.br`
     case ArtifactName.ZKEY:
-      return `${artifactVariantString}/${artifactName}`
+      return `${artifactVariantString}/${artifactName}.br`
     case ArtifactName.VKEY:
       return `${artifactVariantString}/${artifactName}.json`
     case ArtifactName.DAT:
-      return `prover/${proverType}/${artifactVariantString}.${artifactName}`
+      return `prover/native/${artifactVariantString}.${artifactName}.br`
   }
 }
 
