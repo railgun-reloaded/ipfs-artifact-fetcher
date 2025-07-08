@@ -1,3 +1,8 @@
 {
-  "extends": ["@railgun-reloaded/tsconfig/tsconfig"]
+  "extends": ["@railgun-reloaded/tsconfig/tsconfig"],
+  "compilerOptions": {
+    "module": "ES2022",
+    "target": "ES2021",
+    "moduleResolution": "node"
+  },
 }
