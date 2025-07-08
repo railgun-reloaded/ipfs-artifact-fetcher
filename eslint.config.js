@@ -1,1 +1,3 @@
-module.exports = [...require('@railgun-reloaded/eslint-config')()]
+import railgunEslintConfig from '@railgun-reloaded/eslint-config';
+
+export default [...railgunEslintConfig()];
