@@ -7,9 +7,11 @@ import axios from 'axios'
 import debug from 'debug'
 import { CID } from 'multiformats/cid'
 
+import { decompressIfNeeded } from './brotli-decompress.js'
 import type { Artifact, ArtifactHashesJson } from './definitions.js'
-import { ArtifactName, RAILGUN_ARTIFACTS_CID_ROOT } from './definitions.js'
+import { ArtifactName, RAILGUN_ARTIFACTS_CID_POI, RAILGUN_ARTIFACTS_CID_ROOT } from './definitions.js'
 import ARTIFACT_V2_HASHES from './json/artifact-v2-hashes.json'
+import { getPathForPOIArtifact, isPOIArtifact } from './poi-artifact-downloader.js'
 import { isDefined } from './utils.js'
 
 const dbg = debug('artifact-fetcher:downloader')
@@ -83,6 +85,7 @@ async function validateArtifactDownload (
   artifactName: ArtifactName,
   artifactVariantString: string
 ): Promise<boolean> {
+  // Only vkey artifacts don't have hash validation
   if (artifactName === ArtifactName.VKEY) {
     return true
   }
@@ -116,20 +119,21 @@ async function downloadArtifactsForVariant (artifactVariantString: string): Prom
   dbg(`Downloading all artifacts for variant: ${artifactVariantString}`)
 
   const useNativeArtifacts = false // Replace with actual check if using native artifacts
+  const cidRoot = getCIDRoot(artifactVariantString)
 
   const [vkeyPath, zkeyPath, wasmOrDatPath] = await Promise.all([
     fetchFromIPFSWithFallback(
-      RAILGUN_ARTIFACTS_CID_ROOT,
+      cidRoot,
       artifactVariantString,
       ArtifactName.VKEY
     ),
     fetchFromIPFSWithFallback(
-      RAILGUN_ARTIFACTS_CID_ROOT,
+      cidRoot,
       artifactVariantString,
       ArtifactName.ZKEY
     ),
     fetchFromIPFSWithFallback(
-      RAILGUN_ARTIFACTS_CID_ROOT,
+      cidRoot,
       artifactVariantString,
       useNativeArtifacts ? ArtifactName.DAT : ArtifactName.WASM
     ),
@@ -167,19 +171,20 @@ function getPathForArtifactName (
   artifactName: ArtifactName,
   artifactVariantString: string
 ) {
-  // TODO: When using the .br files, the hashes are different, don't delete the comments in this function.
+  // Handle POI artifacts
+  if (isPOIArtifact(artifactVariantString)) {
+    return getPathForPOIArtifact(artifactName, artifactVariantString)
+  }
+
   switch (artifactName) {
     case ArtifactName.WASM:
-      // return `prover/snarkjs/${artifactVariantString}.${artifactName}.br`
-      return `prover/snarkjs/${artifactVariantString}.${artifactName}`
+      return `prover/snarkjs/${artifactVariantString}.${artifactName}.br`
     case ArtifactName.ZKEY:
-      // return `${artifactVariantString}/${artifactName}.br`
-      return `${artifactVariantString}/${artifactName}`
+      return `${artifactVariantString}/${artifactName}.br`
     case ArtifactName.VKEY:
       return `${artifactVariantString}/${artifactName}.json`
     case ArtifactName.DAT:
-      // return `prover/native/${artifactVariantString}.${artifactName}.br`
-      return `prover/native/${artifactVariantString}.${artifactName}`
+      return `prover/native/${artifactVariantString}.${artifactName}.br`
   }
 }
 
@@ -215,34 +220,41 @@ async function fetchFromIPFS (
 
   // Fetch with timeout
   const fetchPromise = (async () => {
-    const contents = fs.cat(cid, { path })
+    try {
+      const contents = fs.cat(cid, { path })
 
-    const chunks: Uint8Array[] = []
-    for await (const chunk of contents) {
-      chunks.push(chunk)
-    }
+      const chunks: Uint8Array[] = []
+      for await (const chunk of contents) {
+        chunks.push(chunk)
+      }
 
-    const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
-    const result = new Uint8Array(totalLength)
-    let offset = 0
-    for (const chunk of chunks) {
-      result.set(chunk, offset)
-      offset += chunk.length
-    }
+      const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
+      const result = new Uint8Array(totalLength)
+      let offset = 0
+      for (const chunk of chunks) {
+        result.set(chunk, offset)
+        offset += chunk.length
+      }
 
-    const isValid = await validateArtifactDownload(
-      result,
-      artifactName,
-      artifactVariantString
-    )
+      // Decompress the artifact if needed
+      const decompressedResult = decompressIfNeeded(result, artifactName)
 
-    if (isValid) {
-    // TODO: Store it and return path where it was stored.
-      return result
-    } else {
-      throw new Error(
-      `Invalid hash for artifact download: ${artifactName} for ${artifactVariantString}.`
+      const isValid = await validateArtifactDownload(
+        decompressedResult,
+        artifactName,
+        artifactVariantString
       )
+
+      if (isValid) {
+      // TODO: Store it and return path where it was stored.
+        return result
+      } else {
+        throw new Error(
+        `Invalid hash for artifact download: ${artifactName} for ${artifactVariantString}.`
+        )
+      }
+    } catch (error) {
+      throw new Error(`IPFS fetch failed for ${artifactName} (${artifactVariantString}): ${error instanceof Error ? error.message : String(error)}`)
     }
   })()
 
@@ -261,39 +273,85 @@ async function fetchFromIPFSWithFallback (
   artifactVariantString: string,
   artifactName: ArtifactName
 ): Promise<Uint8Array> {
+  // Try fetching from IPFS first, with a fallback to HTTP gateway if it fails
   try {
+    console.log('trying ipfs')
     // Try IPFS first with 10s timeout
     return await fetchFromIPFS(rootCid, artifactVariantString, artifactName, 10000)
   } catch (error) {
+    console.log('ipfs failed')
+    const errorMessage = error instanceof Error ? error.message : String(error)
+
+    // Log the actual error to understand what's happening
+    console.log('IPFS Error Details:', errorMessage)
+    console.log('Error Stack:', error instanceof Error ? error.stack : 'No stack')
+
     dbg('IPFS fetch failed, falling back to HTTP gateway:', error)
 
     // Fallback to direct HTTP gateway
     const path = getPathForArtifactName(artifactName, artifactVariantString)
     const httpUrl = `https://ipfs-lb.com/ipfs/${rootCid}/${path}`
 
-    const response = await axios.get(httpUrl, { responseType: 'arraybuffer' })
-    if (response.status !== 200) {
-      throw new Error(`HTTP fetch failed with status ${response.status}`)
-    }
-    dbg(`Fetched from HTTP gateway: ${httpUrl}`)
+    // Try fetching from HTTP gateway using axios
+    try {
+      const response = await axios.get(httpUrl, { responseType: 'arraybuffer' })
+      if (response.status !== 200) {
+        throw new Error(`HTTP fetch failed with status ${response.status}`)
+      }
+      dbg(`Fetched from HTTP gateway: ${httpUrl}`)
 
-    const result = new Uint8Array(response.data)
+      // Decompress the artifact if needed
+      const result = new Uint8Array(response.data)
+      const decompressedResult = decompressIfNeeded(result, artifactName)
 
-    // Validate the downloaded artifact
-    const isValid = await validateArtifactDownload(
-      result,
-      artifactName,
-      artifactVariantString
-    )
-
-    if (isValid) {
-      return result
-    } else {
-      throw new Error(
-        `Invalid hash for artifact download: ${artifactName} for ${artifactVariantString}.`
+      // Validate the downloaded artifact
+      const isValid = await validateArtifactDownload(
+        decompressedResult,
+        artifactName,
+        artifactVariantString
       )
+
+      if (isValid) {
+        return result
+      } else {
+        throw new Error(
+          `Invalid hash for artifact download: ${artifactName} for ${artifactVariantString}.`
+        )
+      }
+    } catch (error) {
+      throw new Error(`HTTP gateway fetch failed for ${artifactName} (${artifactVariantString}): ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 }
 
-export { fetchFromIPFS, fetchFromIPFSWithFallback, downloadArtifactsForVariant, initHelia, validateArtifactDownload }
+/**
+ * Gets the appropriate CID root for the given artifact variant.
+ * @param artifactVariantString The variant string to get the CID for.
+ * @returns The CID root string for the artifact variant.
+ */
+function getCIDRoot (artifactVariantString: string): string {
+  return isPOIArtifact(artifactVariantString) ? RAILGUN_ARTIFACTS_CID_POI : RAILGUN_ARTIFACTS_CID_ROOT
+}
+
+/**
+ * Stops the Helia node and cleans up resources
+ */
+async function stopHelia (): Promise<void> {
+  if (heliaNode) {
+    dbg('Stopping Helia node...')
+    await heliaNode.stop()
+    heliaNode = undefined
+    fs = undefined
+    dbg('Helia node stopped')
+  }
+}
+
+export {
+  fetchFromIPFS,
+  fetchFromIPFSWithFallback,
+  downloadArtifactsForVariant,
+  initHelia,
+  stopHelia,
+  validateArtifactDownload,
+  getCIDRoot
+}
