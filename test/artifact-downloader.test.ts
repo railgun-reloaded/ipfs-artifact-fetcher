@@ -189,7 +189,7 @@ describe('artifact-downloader', () => {
       console.log('✅ CID root selection works correctly')
     })
 
-    it.only('should download POI artifacts for 3x3 variant', async () => {
+    it('should download POI artifacts for 3x3 variant', async () => {
       console.log('📥 Testing POI 3x3 artifact download...')
 
       const poiArtifacts = await downloadArtifactsForPOI(3, 3)

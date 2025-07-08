@@ -31,6 +31,7 @@ async function initHelia () {
   }
 
   // Create Helia with optimized block brokers
+  // TODO ensure node instance doesn't persist after file fetch
   heliaNode = await createHeliaHTTP()
 
   // UnixFS allows you to encode files and directories such that they are
@@ -279,6 +280,7 @@ async function fetchFromIPFSWithFallback (
     // Try IPFS first with 10s timeout
     return await fetchFromIPFS(rootCid, artifactVariantString, artifactName, 10000)
   } catch (error) {
+    // TODO only perform axios call if IPFS failed due to timeout/network error
     console.log('ipfs failed')
     const errorMessage = error instanceof Error ? error.message : String(error)
 
