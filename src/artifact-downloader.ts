@@ -6,7 +6,6 @@ import { CID } from 'multiformats/cid'
 
 import type { Artifact } from './definitions.js'
 import { ARTIFACT_VARIANT_STRING_PPOI_PREFIX, ArtifactName, RAILGUN_ARTIFACTS_CID_PPOI, RAILGUN_ARTIFACTS_CID_ROOT, VALID_PPOI_ARTIFACT_VARIANT } from './definitions.js'
-import { isDefined } from './utils.js'
 
 const dbg = debug('artifact-fetcher:downloader')
 
@@ -73,20 +72,6 @@ async function downloadArtifactsForVariant (artifactVariantString: string): Prom
       useNativeArtifacts ? ArtifactName.DAT : ArtifactName.WASM
     ),
   ])
-
-  if (!isDefined(vkeyPath)) {
-    throw new Error('Could not download vkey artifact.')
-  }
-  if (!isDefined(zkeyPath)) {
-    throw new Error('Could not download zkey artifact.')
-  }
-  if (!isDefined(wasmOrDatPath)) {
-    throw new Error(
-      useNativeArtifacts
-        ? 'Could not download dat artifact.'
-        : 'Could not download wasm artifact.'
-    )
-  }
 
   return {
     vkey: vkeyPath,
