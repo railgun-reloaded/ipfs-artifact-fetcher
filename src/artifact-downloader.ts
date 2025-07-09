@@ -92,7 +92,7 @@ function getPathForArtifactName (
   artifactVariantString: string
 ) {
   if (artifactVariantString.startsWith(ARTIFACT_VARIANT_STRING_PPOI_PREFIX)) {
-  // Check if its a PPOI Artifact and validate if it's a valid one.
+    // Check if its a PPOI Artifact and validate if it's a valid one.
     if (!VALID_PPOI_ARTIFACT_VARIANT.includes(artifactVariantString)) {
       throw new Error(`Invalid POI artifact variant: ${artifactVariantString}. Only POI_3x3 and POI_13x13 are supported.`)
     }
