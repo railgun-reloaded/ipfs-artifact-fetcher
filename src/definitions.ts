@@ -19,10 +19,10 @@ enum ArtifactName {
 }
 
 type Artifact = {
-  zkey: ArrayLike<number>;
-  wasm: Optional<ArrayLike<number>>;
-  dat: Optional<ArrayLike<number>>;
-  vkey: ArrayLike<number>;
+  zkey: Uint8Array;
+  wasm: Optional<Uint8Array>;
+  dat: Optional<Uint8Array>;
+  vkey: Uint8Array;
 }
 
  type BytesData = bigint | number | ArrayLike<number> | string
