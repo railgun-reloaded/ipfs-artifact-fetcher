@@ -10,7 +10,8 @@
     "build": "tsc --build",
     "clean": "tsc --build --clean",
     "test": "tsx --test ./test/*.test.ts",
-    "test:only": "tsx --test-only ./test/*.test.ts"
+    "test:only": "tsx --test-only ./test/*.test.ts",
+    "test:only:debug": "DEBUG=artifact-fetcher:* tsx --test-only ./test/*.test.ts"
   },
   "repository": {
     "type": "git",
