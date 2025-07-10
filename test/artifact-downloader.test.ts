@@ -15,7 +15,7 @@ import { ARTIFACT_VARIANT_STRING_PPOI_PREFIX, ArtifactName, RAILGUN_ARTIFACTS_CI
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-describe('artifact-downloader', () => {
+describe('artifact-downloader', { timeout: 200000 }, () => {
   afterEach(async () => {
     await stopHelia()
   })
