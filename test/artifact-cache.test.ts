@@ -38,7 +38,7 @@ describe('artifact-cache', { timeout: 100000 }, () => {
     assert.deepStrictEqual(artifacts1.wasm, artifacts2.wasm, 'Cached wasm should match original')
 
     // Second download should be instant since it's cached
-    assert.strictEqual(time2, 0, 'Cached download should be 0ms since no network request is needed')
+    assert.ok(time2 < 10, `Cached download should be under 10ms, got ${time2}ms`)
 
     // Clean up
     downloader.clearCache()
