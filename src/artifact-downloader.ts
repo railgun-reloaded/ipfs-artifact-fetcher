@@ -1,7 +1,7 @@
+import { createHeliaHTTP } from '@helia/http'
 import { unixfs } from '@helia/unixfs'
 import brotliDecompress from 'brotli/decompress'
 import debug from 'debug'
-import { createHelia } from 'helia'
 import { CID } from 'multiformats/cid'
 
 import type { Artifact } from './definitions.js'
@@ -9,7 +9,7 @@ import { ARTIFACT_VARIANT_STRING_PPOI_PREFIX, ArtifactName, RAILGUN_ARTIFACTS_CI
 
 const dbg = debug('artifact-fetcher:downloader')
 
-let heliaNode: Awaited<ReturnType<typeof createHelia>> | undefined
+let heliaNode: Awaited<ReturnType<typeof createHeliaHTTP>> | undefined
 let fs: ReturnType<typeof unixfs> | undefined
 
 /**
@@ -18,7 +18,12 @@ let fs: ReturnType<typeof unixfs> | undefined
 async function initHelia () {
   if (!heliaNode) {
     dbg('Initializing Helia node...')
-    heliaNode = await createHelia()
+    heliaNode = await createHeliaHTTP({
+      // Don't start up a node since we only fetch from the network
+      start: false,
+    })
+
+    // Unix filestore interface to read files from IPFS
     fs = unixfs(heliaNode)
   } else {
     dbg('Helia node already initialized')
