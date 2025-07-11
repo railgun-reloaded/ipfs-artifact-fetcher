@@ -1,13 +1,10 @@
 import assert from 'node:assert'
 import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { afterEach, describe, it } from 'node:test'
+import { afterEach, beforeEach, describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-import {
-  downloadArtifactsForVariant,
-  stopHelia
-} from '../src/artifact-downloader.js'
+import { ArtifactDownloader } from '../src/artifact-downloader.js'
 import { ARTIFACT_VARIANT_STRING_PPOI_PREFIX } from '../src/definitions.js'
 
 // Get the current test directory path
@@ -15,13 +12,19 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
 describe('artifact-downloader', { timeout: 200000 }, () => {
+  let downloader: ArtifactDownloader
+
+  beforeEach(() => {
+    downloader = new ArtifactDownloader()
+  })
+
   afterEach(async () => {
-    await stopHelia()
+    await downloader.stop()
   })
 
   it('should download RAILGUN 1x1 artifacts and verify vkey matches local file', async () => {
     const artifactVariantString = '1x1'
-    const { vkey, zkey, dat, wasm } = await downloadArtifactsForVariant(artifactVariantString)
+    const { vkey, zkey, dat, wasm } = await downloader.downloadArtifactsForVariant(artifactVariantString)
 
     // Verify we got the expected artifacts
     assert.ok(vkey, 'vkey should be defined')
@@ -52,7 +55,7 @@ describe('artifact-downloader', { timeout: 200000 }, () => {
 
   it('should download PPOI 3x3 artifacts and verify vkey matches local file', async () => {
     const artifactVariantString = `${ARTIFACT_VARIANT_STRING_PPOI_PREFIX}_3x3`
-    const { vkey, zkey, wasm, dat } = await downloadArtifactsForVariant(artifactVariantString)
+    const { vkey, zkey, wasm, dat } = await downloader.downloadArtifactsForVariant(artifactVariantString)
 
     // Verify we got the expected artifacts
     assert.ok(vkey, 'PPOI vkey should be defined')
