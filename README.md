@@ -135,7 +135,7 @@ RAILGUN circuit artifacts are cryptographic files required for zero-knowledge pr
 
 ## Requirements
 
-- Node.js >=22.0.0
+- [Node.js >=22.0.0](https://github.com/ipfs-examples/helia-examples/tree/main/examples/helia-ts-node)
 - Network access to IPFS gateways
 
 ## License
