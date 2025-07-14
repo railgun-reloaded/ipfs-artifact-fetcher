@@ -36,7 +36,7 @@ const testArtifactStore = new ArtifactStore(
   fileExists
 )
 
-describe('artifact-downloader for snarkjs artifacts', () => {
+describe('artifact-downloader for snarkjs artifacts', { timeout: 200000 }, () => {
   let downloader: ArtifactDownloader
 
   before(() => {
@@ -126,7 +126,7 @@ describe('artifact-downloader for snarkjs artifacts', () => {
   })
 })
 
-describe('artifact-downloader for native artifacts', () => {
+describe('artifact-downloader for native artifacts', { timeout: 200000 }, () => {
   let downloader: ArtifactDownloader
 
   before(() => {
