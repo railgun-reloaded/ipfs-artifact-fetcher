@@ -4,8 +4,7 @@ import brotliDecompress from 'brotli/decompress'
 import debug from 'debug'
 import { CID } from 'multiformats/cid'
 
-import { ArtifactCache } from './artifact-cache.js'
-import type { Artifact } from './definitions.js'
+import type { ArtifactStore } from './artifact-store.js'
 import { ARTIFACT_VARIANT_STRING_PPOI_PREFIX, ArtifactName, RAILGUN_ARTIFACTS_CID_PPOI, RAILGUN_ARTIFACTS_CID_ROOT, VALID_PPOI_ARTIFACT_VARIANT } from './definitions.js'
 
 const dbg = debug('ipfs-artifact-fetcher:downloader')
@@ -19,14 +18,20 @@ class ArtifactDownloader {
   /** The UnixFS interface for reading files from IPFS */
   private fs?: ReturnType<typeof unixfs>
   /** The artifact cache instance */
-  private artifactCache: ArtifactCache
+  private artifactStore: ArtifactStore
+  /**
+   * Indicates whether to use native artifacts (e.g., .dat files) instead of WASM.
+   */
+  private useNativeArtifacts: boolean
 
   /**
-   * Creates a new ArtifactDownloader instance
-   * @param cache Optional cache instance to use, creates new one if not provided
+   * Creates an instance of ArtifactDownloader to manage IPFS artifact downloads and caching.
+   * @param artifactStore The artifact cache instance.
+   * @param useNativeArtifacts Indicates whether to use native artifacts (e.g., .dat files) instead of WASM.
    */
-  constructor (cache?: ArtifactCache) {
-    this.artifactCache = cache ?? new ArtifactCache()
+  constructor (artifactStore: ArtifactStore, useNativeArtifacts: boolean) {
+    this.artifactStore = artifactStore
+    this.useNativeArtifacts = useNativeArtifacts
   }
 
   /**
@@ -69,15 +74,18 @@ class ArtifactDownloader {
   /**
    * Downloads all artifacts (vkey, zkey, wasm/dat) for a given artifact variant from IPFS.
    * @param artifactVariantString The variant string representing the artifact variant.
-   * @returns A promise that resolves to an Artifact object containing the downloaded artifacts.
+   * @returns A promise that resolves to an Artifact object containing the path to the downloaded artifacts.
    */
-  async downloadArtifactsForVariant (artifactVariantString: string): Promise<Artifact> {
+  async downloadArtifactsForVariant (artifactVariantString: string): Promise<{
+    vkeyStoredPath: string;
+    zkeyStoredPath: string;
+    wasmOrDatStoredPath: string;
+  }> {
     dbg(`Downloading all artifacts for variant: ${artifactVariantString}`)
 
-    const useNativeArtifacts = false // Replace with actual check if using native artifacts
-    const cidRoot = artifactVariantString.startsWith(ARTIFACT_VARIANT_STRING_PPOI_PREFIX) ? RAILGUN_ARTIFACTS_CID_PPOI : RAILGUN_ARTIFACTS_CID_ROOT
+    const cidRoot = this.isPPOIartifactVariant(artifactVariantString) ? RAILGUN_ARTIFACTS_CID_PPOI : RAILGUN_ARTIFACTS_CID_ROOT
 
-    const [vkeyPath, zkeyPath, wasmOrDatPath] = await Promise.all([
+    const [vkeyStoredPath, zkeyStoredPath, wasmOrDatStoredPath] = await Promise.all([
       this.fetchFromIPFS(
         cidRoot,
         artifactVariantString,
@@ -91,17 +99,51 @@ class ArtifactDownloader {
       this.fetchFromIPFS(
         cidRoot,
         artifactVariantString,
-        useNativeArtifacts ? ArtifactName.DAT : ArtifactName.WASM
+        this.useNativeArtifacts ? ArtifactName.DAT : ArtifactName.WASM
       ),
     ])
 
     return {
-      vkey: vkeyPath,
-      zkey: zkeyPath,
-      wasm: useNativeArtifacts ? undefined : wasmOrDatPath,
-      dat: useNativeArtifacts ? wasmOrDatPath : undefined,
+      vkeyStoredPath,
+      zkeyStoredPath,
+      wasmOrDatStoredPath
     }
   }
+
+  /**
+   * Returns the directory path for storing downloaded artifacts for a given variant string.
+   * @param artifactVariantString The variant string representing the artifact variant.
+   * @returns The directory path for the artifact downloads.
+   */
+  private artifactDownloadsDir (artifactVariantString: string) {
+    if (artifactVariantString.startsWith(ARTIFACT_VARIANT_STRING_PPOI_PREFIX)) {
+      return `artifacts-v2.1/ppoi-nov-2-23/${artifactVariantString}`
+    }
+
+    return `artifacts-v2.1/${artifactVariantString}`
+  };
+
+  /**
+   * Returns the local storage path for a specific artifact and variant string.
+   * @param artifactName The name of the artifact.
+   * @param artifactVariantString The variant string representing the artifact.
+   * @returns The path string for storing the artifact.
+   */
+  private artifactDownloadsPath (
+    artifactName: ArtifactName,
+    artifactVariantString: string
+  ): string {
+    switch (artifactName) {
+      case ArtifactName.WASM:
+        return `${this.artifactDownloadsDir(artifactVariantString)}/wasm`
+      case ArtifactName.ZKEY:
+        return `${this.artifactDownloadsDir(artifactVariantString)}/zkey`
+      case ArtifactName.VKEY:
+        return `${this.artifactDownloadsDir(artifactVariantString)}/vkey.json`
+      case ArtifactName.DAT:
+        return `${this.artifactDownloadsDir(artifactVariantString)}/dat`
+    }
+  };
 
   /**
    * Returns the IPFS path for a given artifact name and variant string.
@@ -109,11 +151,11 @@ class ArtifactDownloader {
    * @param artifactVariantString The variant string representing the artifact.
    * @returns The constructed path string for the artifact.
    */
-  private getPathForArtifactName (
+  private getIPFSpathForArtifactName (
     artifactName: ArtifactName,
     artifactVariantString: string
   ): string {
-    if (artifactVariantString.startsWith(ARTIFACT_VARIANT_STRING_PPOI_PREFIX)) {
+    if (this.isPPOIartifactVariant(artifactVariantString)) {
       // Check if its a PPOI Artifact and validate if it's a valid one.
       if (!VALID_PPOI_ARTIFACT_VARIANT.includes(artifactVariantString)) {
         throw new Error(`Invalid POI artifact variant: ${artifactVariantString}. Only POI_3x3 and POI_13x13 are supported.`)
@@ -145,22 +187,33 @@ class ArtifactDownloader {
   }
 
   /**
-   * Fetches an artifact from IPFS, decompresses it if necessary, and returns its contents as a Uint8Array.
-   * @param rootCid The root CID from which to fetch the artifact.
-   * @param artifactVariantString The variant string representing the artifact.
+   * Checks if the given artifact variant string is a PPOI artifact variant.
+   * @param artifactVariantString The variant string to check.
+   * @returns True if the variant string is a PPOI artifact variant, false otherwise.
+   */
+  private isPPOIartifactVariant (artifactVariantString: string) {
+    return artifactVariantString.startsWith(ARTIFACT_VARIANT_STRING_PPOI_PREFIX)
+  }
+
+  /**
+   * Fetches an artifact from IPFS, decompresses it if necessary, and stores it in the provided artifact store.
+   * @param rootCid The root CID of the IPFS directory containing the artifacts.
+   * @param artifactVariantString The variant string representing the artifact variant.
    * @param artifactName The name of the artifact to fetch.
-   * @returns A promise that resolves to the decompressed artifact data as a Uint8Array.
+   * @returns A promise that resolves to the path where the artifact is stored.
    */
   async fetchFromIPFS (
     rootCid: string,
     artifactVariantString: string,
     artifactName: ArtifactName
-  ): Promise<Uint8Array> {
-    // Check cache first
-    const cached = this.artifactCache.get(rootCid, artifactVariantString, artifactName)
-    if (cached) {
-      dbg(`Cache hit for ${artifactName} (${artifactVariantString}) - ${cached.length} bytes`)
-      return cached
+  ): Promise<string> {
+    const storePath = this.artifactDownloadsPath(artifactName, artifactVariantString)
+
+    // Check if the artifact already exists in the store
+    if (await this.artifactStore.exists(storePath)) {
+      dbg(`Already stored ${artifactName} artifact for variant (${artifactVariantString}) - ${storePath.length} bytes`)
+
+      return storePath
     }
 
     await this.initHelia()
@@ -168,12 +221,12 @@ class ArtifactDownloader {
     if (!this.fs) throw new Error('Helia UnixFS not initialized')
 
     const cid = CID.parse(rootCid)
-    const path = this.getPathForArtifactName(artifactName, artifactVariantString)
+    const ipfsPath = this.getIPFSpathForArtifactName(artifactName, artifactVariantString)
 
-    dbg(`Fetching from IPFS CID: ${cid.toString()}${`/${path}`}`)
+    dbg(`Fetching from IPFS CID: ${cid.toString()}${`/${ipfsPath}`}`)
 
     try {
-      const contents = this.fs.cat(cid, { path })
+      const contents = this.fs.cat(cid, { path: ipfsPath })
 
       const chunks: Uint8Array[] = []
       for await (const chunk of contents) {
@@ -189,14 +242,16 @@ class ArtifactDownloader {
         offset += chunk.length
       }
 
-      const decompressedResult = this.decompressArtifact(result, artifactName)
+      const decompressedArtifact = this.decompressArtifact(result, artifactName)
 
-      // Cache the result
-      this.artifactCache.set(rootCid, artifactVariantString, artifactName, decompressedResult)
+      // Artifact integrity is ensured by the Helia node, so explicit hash validation is unnecessary.
+      await this.artifactStore.store(
+        this.artifactDownloadsDir(artifactVariantString),
+        storePath,
+        decompressedArtifact
+      )
 
-      // There's no need to validate the artifact hash here since it's already done by Helia node.
-      // TODO: Store it and return path where it was stored.
-      return decompressedResult
+      return storePath
     } catch (error) {
       throw new Error(`IPFS fetch failed for ${artifactName} (${artifactVariantString}): ${error instanceof Error ? error.message : String(error)}`)
     }
@@ -216,23 +271,6 @@ class ArtifactDownloader {
       dbg('Helia node not initialized')
     }
   }
-
-  /**
-   * Clears the artifact cache
-   */
-  clearCache (): void {
-    this.artifactCache.clear()
-  }
-
-  /**
-   * Gets the number of items in the cache
-   * @returns The cache size
-   */
-  getCacheSize (): number {
-    return this.artifactCache.size()
-  }
 }
 
-export {
-  ArtifactDownloader,
-}
+export { ArtifactDownloader }

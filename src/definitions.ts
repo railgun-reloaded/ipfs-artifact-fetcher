@@ -4,7 +4,7 @@ const RAILGUN_ARTIFACTS_CID_ROOT =
 const RAILGUN_ARTIFACTS_CID_PPOI =
   'QmZrP9zaZw2LwErT2yA6VpMWm65UdToQiKj4DtStVsUJHr'
 
-const ARTIFACT_VARIANT_STRING_PPOI_PREFIX = 'POI'
+const ARTIFACT_VARIANT_STRING_PPOI_PREFIX = 'POI' // Note: this should be changed to 'PPOI' when the artifacts are updated in IPFS
 
 const VALID_PPOI_ARTIFACT_VARIANT = [
   `${ARTIFACT_VARIANT_STRING_PPOI_PREFIX}_3x3`,
@@ -32,5 +32,15 @@ type Artifact = {
   Record<ArtifactName.DAT | ArtifactName.WASM | ArtifactName.ZKEY, string>
 >
 
-export type { Artifact, BytesData, ArtifactHashesJson }
+type GetArtifact = (path: string) => Promise<string | Buffer | null> // TODO: Check if this is correct
+
+type StoreArtifact = (
+  dir: string,
+  path: string,
+  item: Uint8Array,
+) => Promise<void>
+
+type ArtifactExists = (path: string) => Promise<boolean>
+
+export type { GetArtifact, StoreArtifact, ArtifactExists, Artifact, BytesData, ArtifactHashesJson }
 export { RAILGUN_ARTIFACTS_CID_ROOT, RAILGUN_ARTIFACTS_CID_PPOI, VALID_PPOI_ARTIFACT_VARIANT, ARTIFACT_VARIANT_STRING_PPOI_PREFIX, ArtifactName }
