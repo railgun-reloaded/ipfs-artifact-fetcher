@@ -10,110 +10,156 @@ npm install @railgun-reloaded/ipfs-artifact-fetcher
 
 ## Example Usage
 
-### `downloadArtifactsForVariant`
+### 1. Setting up ArtifactStore
 
-Download all artifacts (vkey, zkey, wasm/dat) for a specific circuit variant (ex. `1x1`):
-
-```ts
-import { downloadArtifactsForVariant, stopHelia } from 'ipfs-artifact-fetcher';
-
-async function main() {
-  try {
-    // Download RAILGUN 1x1 circuit artifacts
-    const artifacts = await downloadArtifactsForVariant('1x1');
-
-    console.log('Downloaded artifacts:', {
-      vkey: artifacts.vkey ? `${artifacts.vkey.length} bytes` : 'undefined',
-      zkey: artifacts.zkey ? `${artifacts.zkey.length} bytes` : 'undefined',
-      wasm: artifacts.wasm ? `${artifacts.wasm.length} bytes` : 'undefined',
-      dat: artifacts.dat ? `${artifacts.dat.length} bytes` : 'undefined',
-    });
-
-    // Use the artifacts for circuit operations
-    // artifacts.vkey contains the verification key (JSON)
-    // artifacts.zkey contains the proving key (binary)
-    // artifacts.wasm contains the circuit WASM (binary)
-  } finally {
-    // Clean up Helia node resources
-    await stopHelia();
-  }
-}
-
-main().catch(console.error);
-```
-
-#### Output
-
-```sh
-Downloaded artifacts: {
-  vkey: "2847 bytes",
-  zkey: "3891234 bytes",
-  wasm: "1234567 bytes",
-  dat: "undefined"
-}
-```
-
-### PPOI (Private Proof of Innocence) Artifacts
-
-Download PPOI circuit artifacts for privacy-preserving compliance:
+First, create an `ArtifactStore` instance with file system operations:
 
 ```ts
-import { downloadArtifactsForVariant, stopHelia } from 'ipfs-artifact-fetcher';
+import fs from 'node:fs'
+import { ArtifactStore } from 'ipfs-artifact-fetcher'
 
-async function main() {
-  try {
-    // Download PPOI 3x3 circuit artifacts
-    const ppoiArtifacts = await downloadArtifactsForVariant('POI_3x3');
-
-    console.log('PPOI artifacts downloaded:', {
-      vkey: ppoiArtifacts.vkey
-        ? `${ppoiArtifacts.vkey.length} bytes`
-        : 'undefined',
-      zkey: ppoiArtifacts.zkey
-        ? `${ppoiArtifacts.zkey.length} bytes`
-        : 'undefined',
-      wasm: ppoiArtifacts.wasm
-        ? `${ppoiArtifacts.wasm.length} bytes`
-        : 'undefined',
-    });
-  } finally {
-    await stopHelia();
-  }
-}
-
-main().catch(console.error);
+const artifactStore = new ArtifactStore(
+  fs.promises.readFile,  // get function
+  async (dir, path, data) => {  
+    await fs.promises.mkdir(dir, { recursive: true })
+    await fs.promises.writeFile(path, data)
+  }, // store function
+  (path: string): Promise<boolean> => {
+    return new Promise(resolve => {
+      fs.promises
+        .access(path)
+        .then(() => resolve(true))
+        .catch(() => resolve(false))
+    })
+  } // exist function
+)
 ```
 
-### `fetchFromIPFS`
-
-Fetch individual artifacts by name:
+### 2. Creating ArtifactDownloader
 
 ```ts
-import {
-  fetchFromIPFS,
-  stopHelia,
-  ArtifactName,
+import { ArtifactDownloader } from 'ipfs-artifact-fetcher'
+
+// For WASM artifacts (web/JavaScript environments)
+const useNativeArtifacts = false
+const downloader = new ArtifactDownloader(artifactStore, useNativeArtifacts)
+
+// For native artifacts (Node.js/native environments)
+const useNativeArtifacts = true
+const nativeDownloader = new ArtifactDownloader(artifactStore, useNativeArtifacts)
+```
+
+### 3. Downloading Artifacts
+
+```ts
+// Download all RAILGUN 1x1 artifacts
+const artifacts = await downloader.downloadArtifactsForVariant('1x1')
+
+console.log('Downloaded RAILGUN artifacts:')
+console.log('- Path to Verification Key file:', artifacts.vkeyStoredPath)
+console.log('- Path to Proving Key file:', artifacts.zkeyStoredPath)
+console.log('- Path to WASM/DAT file:', artifacts.wasmOrDatStoredPath)
+
+// Download PPOI 3x3 artifacts
+const ppoiArtifacts = await downloader.downloadArtifactsForVariant('POI_3x3')
+
+console.log('Downloaded PPOI artifacts:')
+console.log('- Path to Verification Key file:', ppoiArtifacts.vkeyStoredPath)
+console.log('- Path to Proving Key file:', ppoiArtifacts.zkeyStoredPath)
+console.log('- Path to WASM/DAT file:', ppoiArtifacts.wasmOrDatStoredPath)
+```
+
+### 4. Using fetchFromIPFS to fetch Individual Artifacts
+
+If you need to download individual artifacts instead of all artifacts for a variant, you can use the `fetchFromIPFS` method:
+
+```ts
+import { ArtifactName, RAILGUN_ARTIFACTS_CID_ROOT, PPOI_ARTIFACTS_CID } from 'ipfs-artifact-fetcher'
+
+// Download individual RAILGUN artifacts
+const vkeyPath = await downloader.fetchFromIPFS(
   RAILGUN_ARTIFACTS_CID_ROOT,
-} from 'ipfs-artifact-fetcher';
+  '1x1',
+  ArtifactName.VKEY
+)
 
-async function main() {
-  try {
-    // Fetch only the verification key for 1x1 circuit
-    const vkey = await fetchFromIPFS(
-      RAILGUN_ARTIFACTS_CID_ROOT,
-      '1x1',
-      ArtifactName.VKEY
-    );
+const zkeyPath = await downloader.fetchFromIPFS(
+  RAILGUN_ARTIFACTS_CID_ROOT,
+  '1x1',
+  ArtifactName.ZKEY
+)
 
-    // Parse the vkey JSON
-    const vkeyData = JSON.parse(new TextDecoder().decode(vkey));
-    console.log('Verification key:', vkeyData);
-  } finally {
-    await stopHelia();
-  }
-}
+const wasmPath = await downloader.fetchFromIPFS(
+  RAILGUN_ARTIFACTS_CID_ROOT,
+  '1x1',
+  ArtifactName.WASM
+)
 
-main().catch(console.error);
+console.log('Individual RAILGUN artifacts:')
+console.log('- Path to Verification Key file:', vkeyPath)
+console.log('- Path to Proving Key file:', zkeyPath)
+console.log('- Path to WASM file:', wasmPath)
+
+// Download individual PPOI artifacts
+const ppoiVkeyPath = await downloader.fetchFromIPFS(
+  PPOI_ARTIFACTS_CID,
+  'POI_3x3',
+  ArtifactName.VKEY
+)
+
+const ppoiZkeyPath = await downloader.fetchFromIPFS(
+  PPOI_ARTIFACTS_CID,
+  'POI_3x3',
+  ArtifactName.ZKEY
+)
+
+const ppoiWasmPath = await downloader.fetchFromIPFS(
+  PPOI_ARTIFACTS_CID,
+  'POI_3x3',
+  ArtifactName.WASM
+)
+
+console.log('Individual PPOI artifacts:')
+console.log('- Path to Verification Key file:', ppoiVkeyPath)
+console.log('- Path to Proving Key file:', ppoiZkeyPath)
+console.log('- Path to WASM file:', ppoiWasmPath)
+```
+
+### 5. Cleanup
+
+Always clean up resources when done:
+
+```ts
+await downloader.stop()
+```
+
+## File Structure
+
+Downloaded artifacts are stored in the following structure:
+
+```text
+artifacts-v2.1/
+├── 1x1/
+│   ├── vkey.json
+│   ├── zkey
+│   ├── dat
+│   └── wasm
+├── 2x2/
+│   ├── vkey.json
+│   ├── zkey
+│   ├── dat
+│   └── wasm
+└── ppoi-nov-2-23/
+    ├── POI_3x3/
+    │   ├── vkey.json
+    │   ├── zkey
+    │   ├── dat
+    │   └── wasm
+    └── POI_13x13/
+        ├── vkey.json
+        ├── zkey
+        ├── dat
+        └── wasm
 ```
 
 ## Deep Understanding
