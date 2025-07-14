@@ -25,14 +25,7 @@ type Artifact = {
   vkey: Uint8Array;
 }
 
- type BytesData = bigint | number | ArrayLike<number> | string
-
- type ArtifactHashesJson = Record<
-  string,
-  Record<ArtifactName.DAT | ArtifactName.WASM | ArtifactName.ZKEY, string>
->
-
-type GetArtifact = (path: string) => Promise<string | Buffer | null> // TODO: Check if this is correct
+type GetArtifact = (path: string) => Promise<Uint8Array | null>
 
 type StoreArtifact = (
   dir: string,
@@ -42,5 +35,5 @@ type StoreArtifact = (
 
 type ArtifactExists = (path: string) => Promise<boolean>
 
-export type { GetArtifact, StoreArtifact, ArtifactExists, Artifact, BytesData, ArtifactHashesJson }
+export type { GetArtifact, StoreArtifact, ArtifactExists, Artifact }
 export { RAILGUN_ARTIFACTS_CID_ROOT, RAILGUN_ARTIFACTS_CID_PPOI, VALID_PPOI_ARTIFACT_VARIANT, ARTIFACT_VARIANT_STRING_PPOI_PREFIX, ArtifactName }
