@@ -105,6 +105,25 @@ describe('artifact-downloader for snarkjs artifacts', () => {
 
     assert.deepStrictEqual(downloadedArtifactJson, localArtifactJson, 'Downloaded vkey does not match local artifact')
   })
+
+  it('should use already stored artifacts', async () => {
+    const artifactVariantStrings = ['1x1', `${ARTIFACT_VARIANT_STRING_PPOI_PREFIX}_3x3`]
+
+    // Download artifacts for both variants
+    for (const variant of artifactVariantStrings) {
+      await downloader.downloadArtifactsForVariant(variant)
+    }
+
+    // Measure time for re-downloading (should use already stored artifacts)
+    const start = process.hrtime.bigint()
+    for (const variant of artifactVariantStrings) {
+      await downloader.downloadArtifactsForVariant(variant)
+    }
+    const end = process.hrtime.bigint()
+    const durationMs = Number(end - start) / 1_000_000 // Convert nanoseconds to milliseconds
+
+    assert.ok(durationMs < 1000, `Artifacts should be fetched from cache in <1s, got ${durationMs.toFixed(2)}ms`)
+  })
 })
 
 describe('artifact-downloader for native artifacts', () => {
