@@ -1,7 +1,7 @@
 const RAILGUN_ARTIFACTS_CID_ROOT =
   'QmeBrG7pii1qTqsn7rusvDiqXopHPjCT9gR4PsmW7wXqZq'
 
-const RAILGUN_ARTIFACTS_CID_PPOI =
+const PPOI_ARTIFACTS_CID =
   'QmZrP9zaZw2LwErT2yA6VpMWm65UdToQiKj4DtStVsUJHr'
 
 const ARTIFACT_VARIANT_STRING_PPOI_PREFIX = 'POI' // Note: this should be changed to 'PPOI' when the artifacts are updated in IPFS
@@ -36,4 +36,4 @@ type StoreArtifact = (
 type ArtifactExists = (path: string) => Promise<boolean>
 
 export type { GetArtifact, StoreArtifact, ArtifactExists, Artifact }
-export { RAILGUN_ARTIFACTS_CID_ROOT, RAILGUN_ARTIFACTS_CID_PPOI, VALID_PPOI_ARTIFACT_VARIANT, ARTIFACT_VARIANT_STRING_PPOI_PREFIX, ArtifactName }
+export { RAILGUN_ARTIFACTS_CID_ROOT, PPOI_ARTIFACTS_CID, VALID_PPOI_ARTIFACT_VARIANT, ARTIFACT_VARIANT_STRING_PPOI_PREFIX, ArtifactName }

@@ -5,7 +5,7 @@ import debug from 'debug'
 import { CID } from 'multiformats/cid'
 
 import type { ArtifactStore } from './artifact-store.js'
-import { ARTIFACT_VARIANT_STRING_PPOI_PREFIX, ArtifactName, RAILGUN_ARTIFACTS_CID_PPOI, RAILGUN_ARTIFACTS_CID_ROOT, VALID_PPOI_ARTIFACT_VARIANT } from './definitions.js'
+import { ARTIFACT_VARIANT_STRING_PPOI_PREFIX, ArtifactName, PPOI_ARTIFACTS_CID, RAILGUN_ARTIFACTS_CID_ROOT, VALID_PPOI_ARTIFACT_VARIANT } from './definitions.js'
 
 const dbg = debug('ipfs-artifact-fetcher:downloader')
 
@@ -83,7 +83,7 @@ class ArtifactDownloader {
   }> {
     dbg(`Downloading all artifacts for variant: ${artifactVariantString}`)
 
-    const cidRoot = this.isPPOIartifactVariant(artifactVariantString) ? RAILGUN_ARTIFACTS_CID_PPOI : RAILGUN_ARTIFACTS_CID_ROOT
+    const cidRoot = this.isPPOIartifactVariant(artifactVariantString) ? PPOI_ARTIFACTS_CID : RAILGUN_ARTIFACTS_CID_ROOT
 
     const [vkeyStoredPath, zkeyStoredPath, wasmOrDatStoredPath] = await Promise.all([
       this.fetchFromIPFS(
