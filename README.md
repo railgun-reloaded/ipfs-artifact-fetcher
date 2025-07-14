@@ -53,7 +53,7 @@ Downloaded artifacts: {
 }
 ```
 
-### PPOI (Proof of Innocence) Artifacts
+### PPOI (Private Proof of Innocence) Artifacts
 
 Download PPOI circuit artifacts for privacy-preserving compliance:
 
