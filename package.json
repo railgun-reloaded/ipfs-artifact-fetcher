@@ -1,5 +1,5 @@
 {
-  "name": "artifact-fetcher",
+  "name": "ipfs-artifact-fetcher",
   "version": "1.0.0",
   "description": "A simple module to fetch RAILGUN artifacts",
   "main": "src/index.js",
@@ -11,11 +11,11 @@
     "clean": "tsc --build --clean",
     "test": "tsx --test ./test/*.test.ts",
     "test:only": "tsx --test-only ./test/*.test.ts",
-    "test:only:debug": "DEBUG=artifact-fetcher:* tsx --test-only ./test/*.test.ts"
+    "test:only:debug": "DEBUG=ipfs-artifact-fetcher:* tsx --test-only ./test/*.test.ts"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/railgun-reloaded/artifact-fetcher.git"
+    "url": "git+https://github.com/railgun-reloaded/ipfs-artifact-fetcher.git"
   },
   "author": "RAILGUN Project Contributors",
   "license": "MIT",
@@ -23,12 +23,12 @@
     "node": ">=22.0.0"
   },
   "bugs": {
-    "url": "https://github.com/railgun-reloaded/artifact-fetcher/issues"
+    "url": "https://github.com/railgun-reloaded/ipfs-artifact-fetcher/issues"
   },
   "directories": {
     "test": "test"
   },
-  "homepage": "https://github.com/railgun-reloaded/artifact-fetcher#readme",
+  "homepage": "https://github.com/railgun-reloaded/ipfs-artifact-fetcher#readme",
   "devDependencies": {
     "@railgun-reloaded/eslint-config": "^1.1.0",
     "@railgun-reloaded/tsconfig": "^1.2.0",

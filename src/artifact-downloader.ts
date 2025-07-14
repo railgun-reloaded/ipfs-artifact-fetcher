@@ -7,7 +7,7 @@ import { CID } from 'multiformats/cid'
 import type { Artifact } from './definitions.js'
 import { ARTIFACT_VARIANT_STRING_PPOI_PREFIX, ArtifactName, RAILGUN_ARTIFACTS_CID_PPOI, RAILGUN_ARTIFACTS_CID_ROOT, VALID_PPOI_ARTIFACT_VARIANT } from './definitions.js'
 
-const dbg = debug('artifact-fetcher:downloader')
+const dbg = debug('ipfs-artifact-fetcher:downloader')
 
 let heliaNode: Awaited<ReturnType<typeof createHeliaHTTP>> | undefined
 let fs: ReturnType<typeof unixfs> | undefined
