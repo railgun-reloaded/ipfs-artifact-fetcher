@@ -1,6 +1,6 @@
 import { createHeliaHTTP } from '@helia/http'
 import { unixfs } from '@helia/unixfs'
-import brotliDecompress from 'brotli/decompress'
+import { decompress as brotliDecompress } from 'brotli'
 import debug from 'debug'
 import { CID } from 'multiformats/cid'
 
@@ -67,8 +67,7 @@ class ArtifactDownloader {
     }
 
     // Decompress Brotli-compressed artifacts (zkey, wasm, dat)
-    const decompress = brotliDecompress as (input: Uint8Array) => Uint8Array
-    return decompress(Buffer.from(data))
+    return brotliDecompress(Buffer.from(data))
   }
 
   /**

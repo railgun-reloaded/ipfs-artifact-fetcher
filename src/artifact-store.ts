@@ -1,4 +1,4 @@
-import type { ArtifactExists, GetArtifact, StoreArtifact } from './definitions'
+import type { ArtifactExists, GetArtifact, StoreArtifact } from './definitions.js'
 
 /**
  * Represents a store for managing artifacts, providing methods to get, store, and check existence.
