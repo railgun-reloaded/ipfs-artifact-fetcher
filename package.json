@@ -10,6 +10,7 @@
     "build": "tsc --build",
     "clean": "tsc --build --clean & rm -rf ./artifacts*",
     "test": "tsx --test ./test/*.test.ts",
+    "test:debug": "DEBUG=ipfs-artifact-fetcher:* tsx --test ./test/*.test.ts",
     "test:only": "tsx --test-only ./test/*.test.ts",
     "test:only:debug": "DEBUG=ipfs-artifact-fetcher:* tsx --test-only ./test/*.test.ts"
   },
