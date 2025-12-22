@@ -47,12 +47,25 @@ class ArtifactDownloader {
   /**
    * Initializes the verified fetch instance if it is not already initialized.
    * Creates and manages a Helia instance for lifecycle management.
+   * @throws Error if initialization fails
    */
   async #initVerifiedFetch (): Promise<void> {
     if (!this.#verifiedFetch) {
-      dbg('Initializing verified fetch instance...')
-      this.#helia = await createHelia()
-      this.#verifiedFetch = await createVerifiedFetch(this.#helia)
+      try {
+        dbg('Initializing verified fetch instance...')
+
+        this.#helia = await createHelia()
+        this.#verifiedFetch = await createVerifiedFetch(this.#helia)
+      } catch (error) {
+        if (this.#helia) {
+          await this.#helia.stop()
+          this.#helia = undefined
+        }
+        this.#verifiedFetch = undefined
+
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        throw new Error(`Failed to initialize verified fetch: ${errorMessage}`)
+      }
     } else {
       dbg('Verified fetch instance already initialized')
     }
@@ -238,6 +251,7 @@ class ArtifactDownloader {
 
   /**
    * Fetches an artifact from IPFS, decompresses it if necessary, and stores it in the provided artifact store.
+   * Includes retry logic with exponential backoff for transient failures (429, 503, 504, timeouts, connection errors).
    * @param rootCid The root CID of the IPFS directory containing the artifacts.
    * @param artifactVariantString The variant string representing the artifact variant.
    * @param artifactName The name of the artifact to fetch.
@@ -280,39 +294,60 @@ class ArtifactDownloader {
 
     dbg(`Fetching from IPFS URL: ${ipfsUrl}`)
 
-    try {
-      // Use verified fetch with the IPFS URL
-      const response = await this.#verifiedFetch(ipfsUrl)
+    const maxRetries = 5
+    let lastError: Error | undefined
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch: ${response.status} ${response.statusText}`)
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        // Use verified fetch with the IPFS URL
+        const response = await this.#verifiedFetch(ipfsUrl)
+
+        if (!response.ok) {
+          const statusCode = response.status
+          // Retry on 429 (rate limit), 503/504 (service unavailable/gateway timeout)
+          if ([429, 503, 504].includes(statusCode) && attempt < maxRetries) {
+            const delay = Math.pow(2, attempt) * 1_000 // exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s
+            dbg(`Fetch failed with ${statusCode}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`)
+            await new Promise(resolve => setTimeout(resolve, delay))
+            continue
+          }
+          throw new Error(`Failed to fetch: ${statusCode} ${response.statusText}`)
+        }
+
+        const arrayBuffer = await response.arrayBuffer()
+        const result = new Uint8Array(arrayBuffer)
+
+        const decompressedArtifact = this.#decompressArtifact(
+          result,
+          artifactName
+        )
+
+        // Artifact integrity is ensured by the Helia node, so explicit hash validation is unnecessary.
+        await this.#artifactStore.store(
+          this.#artifactDownloadsDir(artifactVariantString),
+          storePath,
+          decompressedArtifact
+        )
+
+        dbg(`Fetched and stored ${artifactName} artifact for variant (${artifactVariantString}) - ${decompressedArtifact.length} bytes`)
+
+        return decompressedArtifact
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error))
+
+        if (attempt < maxRetries) {
+          const delay = Math.pow(2, attempt) * 1000 // exponential backoff
+          dbg(`Fetch attempt ${attempt + 1} failed: ${lastError.message}, retrying in ${delay}ms`)
+          await new Promise(resolve => setTimeout(resolve, delay))
+        }
       }
-
-      const arrayBuffer = await response.arrayBuffer()
-      const result = new Uint8Array(arrayBuffer)
-
-      const decompressedArtifact = this.#decompressArtifact(
-        result,
-        artifactName
-      )
-
-      // Artifact integrity is ensured by the Helia node, so explicit hash validation is unnecessary.
-      await this.#artifactStore.store(
-        this.#artifactDownloadsDir(artifactVariantString),
-        storePath,
-        decompressedArtifact
-      )
-
-      dbg(`Fetched and stored ${artifactName} artifact for variant (${artifactVariantString}) - ${decompressedArtifact.length} bytes`)
-
-      return decompressedArtifact
-    } catch (error) {
-      throw new Error(
-        `IPFS fetch failed for ${artifactName} (${artifactVariantString}): ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      )
     }
+
+    throw new Error(
+      `IPFS fetch failed for ${artifactName} (${artifactVariantString}) after ${maxRetries + 1} attempts: ${
+        lastError?.message ?? 'Unknown error'
+      }`
+    )
   }
 
   /**
