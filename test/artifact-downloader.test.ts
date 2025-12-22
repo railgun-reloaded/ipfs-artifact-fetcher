@@ -36,7 +36,7 @@ const testArtifactStore = new ArtifactStore(
   fileExists
 )
 
-describe.skip('artifact-downloader for snarkjs artifacts', { timeout: 2000000 }, () => {
+describe('artifact-downloader for snarkjs artifacts', { timeout: 2000000 }, () => {
   let downloader: ArtifactDownloader
 
   before(() => {
@@ -126,7 +126,7 @@ describe.skip('artifact-downloader for snarkjs artifacts', { timeout: 2000000 },
   })
 })
 
-describe('artifact-downloader for native artifacts', () => {
+describe('artifact-downloader for native artifacts', { timeout: 200000 }, () => {
   let downloader: ArtifactDownloader
 
   before(() => {
@@ -134,11 +134,11 @@ describe('artifact-downloader for native artifacts', () => {
     downloader = new ArtifactDownloader(testArtifactStore, useNativeArtifacts)
   })
 
-  // after(async () => {
-  //   await downloader.stop()
-  // })
+  after(async () => {
+    await downloader.stop()
+  })
 
-  it.skip('should download RAILGUN 01x01 artifacts and verify vkey matches local file', async () => {
+  it('should download RAILGUN 01x01 artifacts and verify vkey matches local file', async () => {
     const artifactVariantString = '01x01'
     const {
       vkeyStoredPath,
@@ -169,7 +169,7 @@ describe('artifact-downloader for native artifacts', () => {
     assert.deepStrictEqual(downloadedArtifactJson, localArtifactJson, 'Downloaded vkey does not match local artifact')
   })
 
-  it.skip('should download PPOI 3x3 artifacts and verify vkey matches local file', async () => {
+  it('should download PPOI 3x3 artifacts and verify vkey matches local file', async () => {
     const artifactVariantString = `${ARTIFACT_VARIANT_STRING_PPOI_PREFIX}_3x3`
     const {
       vkeyStoredPath,
@@ -196,7 +196,7 @@ describe('artifact-downloader for native artifacts', () => {
     assert.deepStrictEqual(downloadedArtifactJson, localArtifactJson, 'Downloaded vkey does not match local artifact')
   })
 
-  it.skip('should download PPOI 3x3 native artifact', async () => {
+  it('should download PPOI 3x3 native artifact', async () => {
     const artifactVariantString = `${ARTIFACT_VARIANT_STRING_PPOI_PREFIX}_3x3`
     const file = await downloader.fetchFromIPFS(
       PPOI_ARTIFACTS_CID,
@@ -209,12 +209,11 @@ describe('artifact-downloader for native artifacts', () => {
   })
 
   it('should download RAILGUN 01x01 native artifact', async () => {
-    const artifactVariantString = '02x02'
+    const artifactVariantString = '01x01'
     const file = await downloader.fetchFromIPFS(
       RAILGUN_ARTIFACTS_CID_ROOT,
       artifactVariantString,
       ArtifactName.DAT
-      // ArtifactName.WASM
     )
 
     console.log('Downloaded RAILGUN 01x01 dat artifact size:', file.length)

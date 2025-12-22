@@ -1,7 +1,9 @@
-import { createHeliaHTTP } from '@helia/http'
-import { unixfs } from '@helia/unixfs'
+import type { VerifiedFetch } from '@helia/verified-fetch'
+import { createVerifiedFetch } from '@helia/verified-fetch'
 import { decompress as brotliDecompress } from 'brotli'
 import debug from 'debug'
+import type { Helia } from 'helia'
+import { createHelia } from 'helia'
 import { CID } from 'multiformats/cid'
 
 import type { ArtifactStore } from './artifact-store.js'
@@ -21,10 +23,10 @@ const dbg = debug('ipfs-artifact-fetcher:downloader')
  * ArtifactDownloader class for managing IPFS artifact downloads with caching
  */
 class ArtifactDownloader {
-  /** The Helia HTTP node instance */
-  #heliaNode: Awaited<ReturnType<typeof createHeliaHTTP>> | undefined
-  /** The UnixFS interface for reading files from IPFS */
-  #fs: ReturnType<typeof unixfs> | undefined
+  /** The Helia instance for managing IPFS lifecycle */
+  #helia: Helia | undefined
+  /** The verified fetch instance for trustless IPFS retrieval */
+  #verifiedFetch: VerifiedFetch | undefined
   /** The artifact cache instance */
   #artifactStore: ArtifactStore
   /**
@@ -43,20 +45,16 @@ class ArtifactDownloader {
   }
 
   /**
-   * Initializes the Helia node and UnixFS instance if they are not already initialized.
+   * Initializes the verified fetch instance if it is not already initialized.
+   * Creates and manages a Helia instance for lifecycle management.
    */
-  async #initHelia (): Promise<void> {
-    if (!this.#heliaNode) {
-      dbg('Initializing Helia node...')
-      this.#heliaNode = await createHeliaHTTP({
-        // Don't start up a node since we only fetch from the network
-        start: false,
-      })
-
-      // Unix filestore interface to read files from IPFS
-      this.#fs = unixfs(this.#heliaNode)
+  async #initVerifiedFetch (): Promise<void> {
+    if (!this.#verifiedFetch) {
+      dbg('Initializing verified fetch instance...')
+      this.#helia = await createHelia()
+      this.#verifiedFetch = await createVerifiedFetch(this.#helia)
     } else {
-      dbg('Helia node already initialized')
+      dbg('Verified fetch instance already initialized')
     }
   }
 
@@ -122,21 +120,29 @@ class ArtifactDownloader {
       ? PPOI_ARTIFACTS_CID
       : RAILGUN_ARTIFACTS_CID_ROOT
 
-    const [vkeyStoredPath, zkeyStoredPath, wasmOrDatStoredPath] =
-      await Promise.all([
-        this.fetchFromIPFS(cidRoot, artifactVariantString, ArtifactName.VKEY),
-        this.fetchFromIPFS(cidRoot, artifactVariantString, ArtifactName.ZKEY),
-        this.fetchFromIPFS(
-          cidRoot,
-          artifactVariantString,
-          this.#useNativeArtifacts ? ArtifactName.DAT : ArtifactName.WASM
-        ),
-      ])
+    await Promise.all([
+      this.fetchFromIPFS(cidRoot, artifactVariantString, ArtifactName.VKEY),
+      this.fetchFromIPFS(cidRoot, artifactVariantString, ArtifactName.ZKEY),
+      this.fetchFromIPFS(
+        cidRoot,
+        artifactVariantString,
+        this.#useNativeArtifacts ? ArtifactName.DAT : ArtifactName.WASM
+      ),
+    ])
 
     return {
-      vkeyStoredPath,
-      zkeyStoredPath,
-      wasmOrDatStoredPath,
+      vkeyStoredPath: this.#artifactDownloadsPath(
+        ArtifactName.VKEY,
+        artifactVariantString
+      ),
+      zkeyStoredPath: this.#artifactDownloadsPath(
+        ArtifactName.ZKEY,
+        artifactVariantString
+      ),
+      wasmOrDatStoredPath: this.#artifactDownloadsPath(
+        this.#useNativeArtifacts ? ArtifactName.DAT : ArtifactName.WASM,
+        artifactVariantString
+      ),
     }
   }
 
@@ -235,13 +241,13 @@ class ArtifactDownloader {
    * @param rootCid The root CID of the IPFS directory containing the artifacts.
    * @param artifactVariantString The variant string representing the artifact variant.
    * @param artifactName The name of the artifact to fetch.
-   * @returns A promise that resolves to the path where the artifact is stored.
+   * @returns A promise that resolves to the decompressed artifact data.
    */
   async fetchFromIPFS (
     rootCid: string,
     artifactVariantString: string,
     artifactName: ArtifactName
-  ): Promise<string> {
+  ): Promise<Uint8Array> {
     const storePath = this.#artifactDownloadsPath(
       artifactName,
       artifactVariantString
@@ -250,15 +256,19 @@ class ArtifactDownloader {
     // Check if the artifact already exists in the store
     if (await this.#artifactStore.exists(storePath)) {
       dbg(
-        `Already stored ${artifactName} artifact for variant (${artifactVariantString}) - ${storePath.length} bytes`
+        `Already stored ${artifactName} artifact for variant (${artifactVariantString}) - reading from cache`
       )
 
-      return storePath
+      const cachedData = await this.#artifactStore.get(storePath)
+      if (!cachedData) {
+        throw new Error(`Failed to read cached artifact: ${storePath}`)
+      }
+      return cachedData
     }
 
-    await this.#initHelia()
+    await this.#initVerifiedFetch()
 
-    if (!this.#fs) throw new Error('Helia UnixFS not initialized')
+    if (!this.#verifiedFetch) throw new Error('Verified fetch not initialized')
 
     const cid = CID.parse(rootCid)
     const ipfsPath = this.#getIPFSpathForArtifactName(
@@ -266,26 +276,20 @@ class ArtifactDownloader {
       artifactVariantString
     )
 
-    dbg(`Fetching from IPFS CID: ${cid.toString()}/${ipfsPath}`)
+    const ipfsUrl = `ipfs://${cid.toString()}/${ipfsPath}`
+
+    dbg(`Fetching from IPFS URL: ${ipfsUrl}`)
 
     try {
-      const contents = this.#fs.cat(cid, { path: ipfsPath })
-      console.log('contents: ', contents)
+      // Use verified fetch with the IPFS URL
+      const response = await this.#verifiedFetch(ipfsUrl)
 
-      const chunks: Uint8Array[] = []
-      for await (const chunk of contents) {
-        console.log('chunk: ', chunk)
-        chunks.push(chunk)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch: ${response.status} ${response.statusText}`)
       }
 
-      const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
-      const result = new Uint8Array(totalLength)
-      let offset = 0
-
-      for (const chunk of chunks) {
-        result.set(chunk, offset)
-        offset += chunk.length
-      }
+      const arrayBuffer = await response.arrayBuffer()
+      const result = new Uint8Array(arrayBuffer)
 
       const decompressedArtifact = this.#decompressArtifact(
         result,
@@ -301,7 +305,7 @@ class ArtifactDownloader {
 
       dbg(`Fetched and stored ${artifactName} artifact for variant (${artifactVariantString}) - ${decompressedArtifact.length} bytes`)
 
-      return storePath
+      return decompressedArtifact
     } catch (error) {
       throw new Error(
         `IPFS fetch failed for ${artifactName} (${artifactVariantString}): ${
@@ -312,17 +316,17 @@ class ArtifactDownloader {
   }
 
   /**
-   * Stops the Helia node and cleans up resources
+   * Stops the Helia instance and cleans up resources
    */
   async stop (): Promise<void> {
-    if (this.#heliaNode) {
-      dbg('Stopping Helia node...')
-      await this.#heliaNode.stop()
-      this.#heliaNode = undefined
-      this.#fs = undefined
-      dbg('Helia node stopped')
+    if (this.#helia) {
+      dbg('Stopping Helia instance...')
+      await this.#helia.stop()
+      this.#helia = undefined
+      this.#verifiedFetch = undefined
+      dbg('Helia instance stopped')
     } else {
-      dbg('Helia node not initialized')
+      dbg('Helia instance not initialized')
     }
   }
 }
