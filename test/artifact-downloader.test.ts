@@ -1,4 +1,5 @@
 import assert from 'node:assert'
+import { setMaxListeners } from 'node:events'
 import fs from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -8,6 +9,9 @@ import { fileURLToPath } from 'node:url'
 import { ArtifactDownloader } from '../src/artifact-downloader.js'
 import { ArtifactStore } from '../src/artifact-store.js'
 import { ARTIFACT_VARIANT_STRING_PPOI_PREFIX, ArtifactName, PPOI_ARTIFACTS_CID, RAILGUN_ARTIFACTS_CID_ROOT } from '../src/definitions.js'
+
+// Increase max listeners to handle concurrent IPFS fetches
+setMaxListeners(50)
 
 // Get the current test directory path
 const __filename = fileURLToPath(import.meta.url)
