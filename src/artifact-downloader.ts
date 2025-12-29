@@ -10,6 +10,7 @@ import type { ValidArtifactVariant } from './definitions.js'
 import {
   ARTIFACT_VARIANT_STRING_PPOI_PREFIX,
   ArtifactName,
+  IPFS_GATEWAY,
   PPOI_ARTIFACTS_CID,
   RAILGUN_ARTIFACTS_CID_ROOT,
   VALID_PPOI_ARTIFACT_VARIANT,
@@ -54,8 +55,7 @@ class ArtifactDownloader {
         dbg('Initializing verified fetch instance...')
 
         this.#verifiedFetch = await createVerifiedFetch({
-          gateways: ['https://trustless-gateway.link'],
-          routers: ['http://delegated-ipfs.dev'],
+          gateways: [IPFS_GATEWAY]
         })
       } catch (error) {
         this.#verifiedFetch = undefined
@@ -324,7 +324,7 @@ class ArtifactDownloader {
           decompressedArtifact
         )
 
-        dbg(`Fetched and stored ${artifactName} artifact for variant (${artifactVariantString}) - ${decompressedArtifact.length} bytes`)
+        dbg(`Successfully fetched and stored ${artifactName} artifact for variant (${artifactVariantString}) - ${decompressedArtifact.length} bytes`)
 
         return decompressedArtifact
       } catch (error) {
