@@ -1,5 +1,4 @@
 import assert from 'node:assert'
-import { setMaxListeners } from 'node:events'
 import fs from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -8,10 +7,8 @@ import { fileURLToPath } from 'node:url'
 
 import { ArtifactDownloader } from '../src/artifact-downloader.js'
 import { ArtifactStore } from '../src/artifact-store.js'
+import type { ValidArtifactVariant } from '../src/definitions.js'
 import { ARTIFACT_VARIANT_STRING_PPOI_PREFIX, ArtifactName, PPOI_ARTIFACTS_CID, RAILGUN_ARTIFACTS_CID_ROOT } from '../src/definitions.js'
-
-// Increase max listeners to handle concurrent IPFS fetches
-setMaxListeners(100)
 
 // Get the current test directory path
 const __filename = fileURLToPath(import.meta.url)
@@ -53,7 +50,7 @@ describe('artifact-downloader for snarkjs artifacts', { timeout: 2000000 }, () =
   })
 
   it('should download RAILGUN 01x01 artifacts and verify vkey matches local file', async () => {
-    const artifactVariantString = '01x01'
+    const artifactVariantString: ValidArtifactVariant = '01x01'
     const {
       vkeyStoredPath,
       zkeyStoredPath,
@@ -84,7 +81,7 @@ describe('artifact-downloader for snarkjs artifacts', { timeout: 2000000 }, () =
   })
 
   it('should download PPOI 3x3 artifacts and verify vkey matches local file', async () => {
-    const artifactVariantString = `${ARTIFACT_VARIANT_STRING_PPOI_PREFIX}_3x3`
+    const artifactVariantString: ValidArtifactVariant = `${ARTIFACT_VARIANT_STRING_PPOI_PREFIX}_3x3`
     const {
       vkeyStoredPath,
       zkeyStoredPath,
@@ -111,7 +108,7 @@ describe('artifact-downloader for snarkjs artifacts', { timeout: 2000000 }, () =
   })
 
   it('should use already stored artifacts', async () => {
-    const artifactVariantStrings = ['01x01', `${ARTIFACT_VARIANT_STRING_PPOI_PREFIX}_3x3`]
+    const artifactVariantStrings: ValidArtifactVariant[] = ['01x01', `${ARTIFACT_VARIANT_STRING_PPOI_PREFIX}_3x3`]
 
     // Download artifacts for both variants
     for (const variant of artifactVariantStrings) {
@@ -143,7 +140,7 @@ describe('artifact-downloader for native artifacts', { timeout: 200000 }, () => 
   })
 
   it('should download RAILGUN 01x01 artifacts and verify vkey matches local file', async () => {
-    const artifactVariantString = '01x01'
+    const artifactVariantString: ValidArtifactVariant = '01x01'
     const {
       vkeyStoredPath,
       zkeyStoredPath,
@@ -174,7 +171,7 @@ describe('artifact-downloader for native artifacts', { timeout: 200000 }, () => 
   })
 
   it('should download PPOI 3x3 artifacts and verify vkey matches local file', async () => {
-    const artifactVariantString = `${ARTIFACT_VARIANT_STRING_PPOI_PREFIX}_3x3`
+    const artifactVariantString: ValidArtifactVariant = `${ARTIFACT_VARIANT_STRING_PPOI_PREFIX}_3x3`
     const {
       vkeyStoredPath,
       zkeyStoredPath,
@@ -201,7 +198,7 @@ describe('artifact-downloader for native artifacts', { timeout: 200000 }, () => 
   })
 
   it('should download PPOI 3x3 native artifact', async () => {
-    const artifactVariantString = `${ARTIFACT_VARIANT_STRING_PPOI_PREFIX}_3x3`
+    const artifactVariantString: ValidArtifactVariant = `${ARTIFACT_VARIANT_STRING_PPOI_PREFIX}_3x3`
     const file = await downloader.fetchFromIPFS(
       PPOI_ARTIFACTS_CID,
       artifactVariantString,
@@ -213,7 +210,7 @@ describe('artifact-downloader for native artifacts', { timeout: 200000 }, () => 
   })
 
   it('should download RAILGUN 01x01 native artifact', async () => {
-    const artifactVariantString = '01x01'
+    const artifactVariantString: ValidArtifactVariant = '01x01'
     const file = await downloader.fetchFromIPFS(
       RAILGUN_ARTIFACTS_CID_ROOT,
       artifactVariantString,

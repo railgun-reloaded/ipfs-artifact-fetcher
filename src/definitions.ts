@@ -11,15 +11,12 @@ const ARTIFACT_VARIANT_STRING_PPOI_PREFIX = 'POI' // Note: this should be change
 const VALID_PPOI_ARTIFACT_VARIANT = [
   `${ARTIFACT_VARIANT_STRING_PPOI_PREFIX}_3x3`,
   `${ARTIFACT_VARIANT_STRING_PPOI_PREFIX}_13x13`,
-]
+] as const
 
 const VALID_RAILGUN_ARTIFACT_VARIANTS = [
-  '01x01', '01x02', '01x03', '01x04', '01x05', '01x06', '01x07', '01x08', '01x09', '01x10',
-  '01x11', '01x12', '01x13',
-  '02x01', '02x02', '02x03', '02x04', '02x05', '02x06', '02x07', '02x08', '02x09', '02x10',
-  '02x11', '02x12',
-  '03x01', '03x02', '03x03', '03x04', '03x05', '03x06', '03x07', '03x08', '03x09', '03x10',
-  '03x11',
+  '01x01', '01x02', '01x03', '01x04', '01x05', '01x06', '01x07', '01x08', '01x09', '01x10', '01x11', '01x12', '01x13',
+  '02x01', '02x02', '02x03', '02x04', '02x05', '02x06', '02x07', '02x08', '02x09', '02x10', '02x11', '02x12',
+  '03x01', '03x02', '03x03', '03x04', '03x05', '03x06', '03x07', '03x08', '03x09', '03x10', '03x11',
   '04x01', '04x02', '04x03', '04x04', '04x05', '04x06', '04x07', '04x08', '04x09', '04x10',
   '05x01', '05x02', '05x03', '05x04', '05x05', '05x06', '05x07', '05x08', '05x09',
   '06x01', '06x02', '06x03', '06x04', '06x05', '06x06', '06x07', '06x08',
@@ -30,7 +27,7 @@ const VALID_RAILGUN_ARTIFACT_VARIANTS = [
   '11x01', '11x02', '11x03',
   '12x01', '12x02',
   '13x01',
-]
+] as const
 
 type ValidPPOIVariant = (typeof VALID_PPOI_ARTIFACT_VARIANT)[number]
 type ValidRailgunVariant = (typeof VALID_RAILGUN_ARTIFACT_VARIANTS)[number]
