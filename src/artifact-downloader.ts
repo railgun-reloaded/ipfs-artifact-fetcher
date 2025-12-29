@@ -3,7 +3,6 @@ import { createVerifiedFetch } from '@helia/verified-fetch'
 import { decompress as brotliDecompress } from 'brotli'
 import debug from 'debug'
 import type { Helia } from 'helia'
-import { createHelia } from 'helia'
 import { CID } from 'multiformats/cid'
 
 import type { ArtifactStore } from './artifact-store.js'
@@ -54,13 +53,11 @@ class ArtifactDownloader {
       try {
         dbg('Initializing verified fetch instance...')
 
-        this.#helia = await createHelia()
-        this.#verifiedFetch = await createVerifiedFetch(this.#helia)
+        this.#verifiedFetch = await createVerifiedFetch({
+          gateways: ['https://trustless-gateway.link'],
+          routers: ['http://delegated-ipfs.dev'],
+        })
       } catch (error) {
-        if (this.#helia) {
-          await this.#helia.stop()
-          this.#helia = undefined
-        }
         this.#verifiedFetch = undefined
 
         const errorMessage = error instanceof Error ? error.message : String(error)
@@ -133,15 +130,13 @@ class ArtifactDownloader {
       ? PPOI_ARTIFACTS_CID
       : RAILGUN_ARTIFACTS_CID_ROOT
 
-    await Promise.all([
-      this.fetchFromIPFS(cidRoot, artifactVariantString, ArtifactName.VKEY),
-      this.fetchFromIPFS(cidRoot, artifactVariantString, ArtifactName.ZKEY),
-      this.fetchFromIPFS(
-        cidRoot,
-        artifactVariantString,
-        this.#useNativeArtifacts ? ArtifactName.DAT : ArtifactName.WASM
-      ),
-    ])
+    await this.fetchFromIPFS(cidRoot, artifactVariantString, ArtifactName.VKEY)
+    await this.fetchFromIPFS(cidRoot, artifactVariantString, ArtifactName.ZKEY)
+    await this.fetchFromIPFS(
+      cidRoot,
+      artifactVariantString,
+      this.#useNativeArtifacts ? ArtifactName.DAT : ArtifactName.WASM
+    )
 
     return {
       vkeyStoredPath: this.#artifactDownloadsPath(
