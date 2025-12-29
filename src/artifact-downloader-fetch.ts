@@ -1,8 +1,5 @@
-import type { VerifiedFetch } from '@helia/verified-fetch'
-import { createVerifiedFetch } from '@helia/verified-fetch'
 import { decompress as brotliDecompress } from 'brotli'
 import debug from 'debug'
-import type { Helia } from 'helia'
 import { CID } from 'multiformats/cid'
 
 import type { ArtifactStore } from './artifact-store.js'
@@ -16,57 +13,36 @@ import {
   VALID_RAILGUN_ARTIFACT_VARIANTS,
 } from './definitions.js'
 
-const dbg = debug('ipfs-artifact-fetcher:downloader')
+const dbg = debug('ipfs-artifact-fetcher:downloader-fetch')
+
+// IPFS gateway URLs to try in order
+const IPFS_GATEWAYS = [
+  'https://ipfs-lb.com',
+  // 'https://cloudflare-ipfs.com',
+  // 'https://gateway.ipfs.io',
+]
 
 /**
- * ArtifactDownloader class for managing IPFS artifact downloads with caching
+ * ArtifactDownloader class for managing IPFS artifact downloads with caching using native fetch
  */
-class ArtifactDownloader {
-  /** The Helia instance for managing IPFS lifecycle */
-  #helia: Helia | undefined
-  /** The verified fetch instance for trustless IPFS retrieval */
-  #verifiedFetch: VerifiedFetch | undefined
+class ArtifactDownloaderFetch {
   /** The artifact cache instance */
   #artifactStore: ArtifactStore
   /**
    * Indicates whether to use native artifacts (e.g., .dat files) instead of WASM.
    */
   #useNativeArtifacts: boolean
+  /** Index of the current gateway being used */
+  #currentGatewayIndex: number = 0
 
   /**
-   * Creates an instance of ArtifactDownloader to manage IPFS artifact downloads and caching.
+   * Creates an instance of ArtifactDownloaderFetch to manage IPFS artifact downloads and caching.
    * @param artifactStore The artifact cache instance.
    * @param useNativeArtifacts Indicates whether to use native artifacts (e.g., .dat files) instead of WASM.
    */
   constructor (artifactStore: ArtifactStore, useNativeArtifacts: boolean) {
     this.#artifactStore = artifactStore
     this.#useNativeArtifacts = useNativeArtifacts
-  }
-
-  /**
-   * Initializes the verified fetch instance if it is not already initialized.
-   * Creates and manages a Helia instance for lifecycle management.
-   * @throws Error if initialization fails
-   */
-  async #initVerifiedFetch (): Promise<void> {
-    if (!this.#verifiedFetch) {
-      try {
-        dbg('Initializing verified fetch instance...')
-
-        this.#verifiedFetch = await createVerifiedFetch({
-          // gateways: ['https://trustless-gateway.link', 'https://cloudflare-ipfs.com'],
-          // routers: ['http://delegated-ipfs.dev'],
-          gateways: ['https://ipfs-lb.com']
-        })
-      } catch (error) {
-        this.#verifiedFetch = undefined
-
-        const errorMessage = error instanceof Error ? error.message : String(error)
-        throw new Error(`Failed to initialize verified fetch: ${errorMessage}`)
-      }
-    } else {
-      dbg('Verified fetch instance already initialized')
-    }
   }
 
   /**
@@ -246,8 +222,18 @@ class ArtifactDownloader {
   }
 
   /**
-   * Fetches an artifact from IPFS, decompresses it if necessary, and stores it in the provided artifact store.
-   * Includes retry logic with exponential backoff for transient failures (429, 503, 504, timeouts, connection errors).
+   * Gets the next available gateway URL and rotates through gateways.
+   * @returns The next gateway URL to try.
+   */
+  #getNextGatewayUrl (): string {
+    const gateway = IPFS_GATEWAYS[this.#currentGatewayIndex] ?? 'https://trustless-gateway.link'
+    this.#currentGatewayIndex = (this.#currentGatewayIndex + 1) % IPFS_GATEWAYS.length
+    return gateway
+  }
+
+  /**
+   * Fetches an artifact from IPFS using native fetch, decompresses it if necessary, and stores it in the provided artifact store.
+   * Includes retry logic with exponential backoff and fallback to other gateways for transient failures (429, 503, 504, timeouts, connection errors).
    * @param rootCid The root CID of the IPFS directory containing the artifacts.
    * @param artifactVariantString The variant string representing the artifact variant.
    * @param artifactName The name of the artifact to fetch.
@@ -276,27 +262,23 @@ class ArtifactDownloader {
       return cachedData
     }
 
-    await this.#initVerifiedFetch()
-
-    if (!this.#verifiedFetch) throw new Error('Verified fetch not initialized')
-
     const cid = CID.parse(rootCid)
     const ipfsPath = this.#getIPFSpathForArtifactName(
       artifactName,
       artifactVariantString
     )
 
-    const ipfsUrl = `ipfs://${cid.toString()}/${ipfsPath}`
-
-    dbg(`Fetching from IPFS URL: ${ipfsUrl}`)
-
     const maxRetries = 5
     let lastError: Error | undefined
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const gateway = this.#getNextGatewayUrl()
+      const httpUrl = `${gateway}/ipfs/${cid.toString()}/${ipfsPath}`
+
+      dbg(`Fetching from IPFS URL: ${httpUrl} (attempt ${attempt + 1}/${maxRetries + 1})`)
+
       try {
-        // Use verified fetch with the IPFS URL
-        const response = await this.#verifiedFetch(ipfsUrl)
+        const response = await fetch(httpUrl)
 
         if (!response.ok) {
           const statusCode = response.status
@@ -318,7 +300,6 @@ class ArtifactDownloader {
           artifactName
         )
 
-        // Artifact integrity is ensured by the Helia node, so explicit hash validation is unnecessary.
         await this.#artifactStore.store(
           this.#artifactDownloadsDir(artifactVariantString),
           storePath,
@@ -347,19 +328,11 @@ class ArtifactDownloader {
   }
 
   /**
-   * Stops the Helia instance and cleans up resources
+   * Cleanup method for fetch-based downloader (no resources to clean up)
    */
   async stop (): Promise<void> {
-    if (this.#helia) {
-      dbg('Stopping Helia instance...')
-      await this.#helia.stop()
-      this.#helia = undefined
-      this.#verifiedFetch = undefined
-      dbg('Helia instance stopped')
-    } else {
-      dbg('Helia instance not initialized')
-    }
+    dbg('Fetch-based downloader stopped')
   }
 }
 
-export { ArtifactDownloader, dbg }
+export { ArtifactDownloaderFetch }

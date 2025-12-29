@@ -8,7 +8,7 @@
     "lint": "eslint",
     "lint:fix": "eslint --fix",
     "build": "tsc --build",
-    "build:nocheck": "tsc --noEmitOnError false",
+    "build:nocheck": "tsc --build",
     "clean": "tsc --build --clean & rm -rf ./artifacts*",
     "test": "npm run build && node --test ./test/*.test.js",
     "test:debug": "npm run build:nocheck && DEBUG=ipfs-artifact-fetcher:* node --test ./test/*.test.js",
@@ -41,10 +41,11 @@
     "typescript": "^5.8.2"
   },
   "dependencies": {
+    "@helia/http": "^3.0.14",
     "@helia/verified-fetch": "^5.1.1",
     "brotli": "^1.3.3",
     "debug": "^4.4.1",
-    "helia": "^4.2.5",
+    "helia": "^6.0.14",
     "multiformats": "^13.3.7"
   }
 }

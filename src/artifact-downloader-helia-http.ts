@@ -1,8 +1,6 @@
-import type { VerifiedFetch } from '@helia/verified-fetch'
-import { createVerifiedFetch } from '@helia/verified-fetch'
+import { createHeliaHTTP } from '@helia/http'
 import { decompress as brotliDecompress } from 'brotli'
 import debug from 'debug'
-import type { Helia } from 'helia'
 import { CID } from 'multiformats/cid'
 
 import type { ArtifactStore } from './artifact-store.js'
@@ -16,16 +14,14 @@ import {
   VALID_RAILGUN_ARTIFACT_VARIANTS,
 } from './definitions.js'
 
-const dbg = debug('ipfs-artifact-fetcher:downloader')
+const dbg = debug('ipfs-artifact-fetcher:downloader-helia-http')
 
 /**
- * ArtifactDownloader class for managing IPFS artifact downloads with caching
+ * ArtifactDownloader class for managing IPFS artifact downloads with caching using Helia HTTP
  */
-class ArtifactDownloader {
-  /** The Helia instance for managing IPFS lifecycle */
-  #helia: Helia | undefined
-  /** The verified fetch instance for trustless IPFS retrieval */
-  #verifiedFetch: VerifiedFetch | undefined
+class ArtifactDownloaderHeliaHTTP {
+  /** The Helia HTTP instance for HTTP-based IPFS retrieval */
+  #heliaHTTP: Awaited<ReturnType<typeof createHeliaHTTP>> | undefined
   /** The artifact cache instance */
   #artifactStore: ArtifactStore
   /**
@@ -34,7 +30,7 @@ class ArtifactDownloader {
   #useNativeArtifacts: boolean
 
   /**
-   * Creates an instance of ArtifactDownloader to manage IPFS artifact downloads and caching.
+   * Creates an instance of ArtifactDownloaderHeliaHTTP to manage IPFS artifact downloads and caching.
    * @param artifactStore The artifact cache instance.
    * @param useNativeArtifacts Indicates whether to use native artifacts (e.g., .dat files) instead of WASM.
    */
@@ -44,28 +40,23 @@ class ArtifactDownloader {
   }
 
   /**
-   * Initializes the verified fetch instance if it is not already initialized.
-   * Creates and manages a Helia instance for lifecycle management.
+   * Initializes the Helia HTTP instance if it is not already initialized.
    * @throws Error if initialization fails
    */
-  async #initVerifiedFetch (): Promise<void> {
-    if (!this.#verifiedFetch) {
+  async #initHeliaHTTP (): Promise<void> {
+    if (!this.#heliaHTTP) {
       try {
-        dbg('Initializing verified fetch instance...')
+        dbg('Initializing Helia HTTP instance...')
 
-        this.#verifiedFetch = await createVerifiedFetch({
-          // gateways: ['https://trustless-gateway.link', 'https://cloudflare-ipfs.com'],
-          // routers: ['http://delegated-ipfs.dev'],
-          gateways: ['https://ipfs-lb.com']
-        })
+        this.#heliaHTTP = await createHeliaHTTP()
       } catch (error) {
-        this.#verifiedFetch = undefined
+        this.#heliaHTTP = undefined
 
         const errorMessage = error instanceof Error ? error.message : String(error)
-        throw new Error(`Failed to initialize verified fetch: ${errorMessage}`)
+        throw new Error(`Failed to initialize Helia HTTP: ${errorMessage}`)
       }
     } else {
-      dbg('Verified fetch instance already initialized')
+      dbg('Helia HTTP instance already initialized')
     }
   }
 
@@ -246,7 +237,7 @@ class ArtifactDownloader {
   }
 
   /**
-   * Fetches an artifact from IPFS, decompresses it if necessary, and stores it in the provided artifact store.
+   * Fetches an artifact from IPFS using Helia HTTP, decompresses it if necessary, and stores it in the provided artifact store.
    * Includes retry logic with exponential backoff for transient failures (429, 503, 504, timeouts, connection errors).
    * @param rootCid The root CID of the IPFS directory containing the artifacts.
    * @param artifactVariantString The variant string representing the artifact variant.
@@ -276,9 +267,9 @@ class ArtifactDownloader {
       return cachedData
     }
 
-    await this.#initVerifiedFetch()
+    await this.#initHeliaHTTP()
 
-    if (!this.#verifiedFetch) throw new Error('Verified fetch not initialized')
+    if (!this.#heliaHTTP) throw new Error('Helia HTTP not initialized')
 
     const cid = CID.parse(rootCid)
     const ipfsPath = this.#getIPFSpathForArtifactName(
@@ -295,8 +286,9 @@ class ArtifactDownloader {
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        // Use verified fetch with the IPFS URL
-        const response = await this.#verifiedFetch(ipfsUrl)
+        // Use Helia HTTP to fetch from IPFS via gateway
+        const cidPath = `${cid.toString()}/${ipfsPath}`
+        const response = await fetch(`https://gateway.ipfs.io/ipfs/${cidPath}`)
 
         if (!response.ok) {
           const statusCode = response.status
@@ -318,7 +310,6 @@ class ArtifactDownloader {
           artifactName
         )
 
-        // Artifact integrity is ensured by the Helia node, so explicit hash validation is unnecessary.
         await this.#artifactStore.store(
           this.#artifactDownloadsDir(artifactVariantString),
           storePath,
@@ -347,19 +338,18 @@ class ArtifactDownloader {
   }
 
   /**
-   * Stops the Helia instance and cleans up resources
+   * Stops the Helia HTTP instance and cleans up resources
    */
   async stop (): Promise<void> {
-    if (this.#helia) {
-      dbg('Stopping Helia instance...')
-      await this.#helia.stop()
-      this.#helia = undefined
-      this.#verifiedFetch = undefined
-      dbg('Helia instance stopped')
+    if (this.#heliaHTTP) {
+      dbg('Stopping Helia HTTP instance...')
+      await this.#heliaHTTP.stop()
+      this.#heliaHTTP = undefined
+      dbg('Helia HTTP instance stopped')
     } else {
-      dbg('Helia instance not initialized')
+      dbg('Helia HTTP instance not initialized')
     }
   }
 }
 
-export { ArtifactDownloader, dbg }
+export { ArtifactDownloaderHeliaHTTP }
