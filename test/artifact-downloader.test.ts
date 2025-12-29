@@ -11,7 +11,7 @@ import { ArtifactStore } from '../src/artifact-store.js'
 import { ARTIFACT_VARIANT_STRING_PPOI_PREFIX, ArtifactName, PPOI_ARTIFACTS_CID, RAILGUN_ARTIFACTS_CID_ROOT } from '../src/definitions.js'
 
 // Increase max listeners to handle concurrent IPFS fetches
-setMaxListeners(50)
+setMaxListeners(100)
 
 // Get the current test directory path
 const __filename = fileURLToPath(import.meta.url)
