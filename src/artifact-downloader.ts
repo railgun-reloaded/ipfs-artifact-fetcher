@@ -6,15 +6,13 @@ import type { Helia } from 'helia'
 import { CID } from 'multiformats/cid'
 
 import type { ArtifactStore } from './artifact-store.js'
-import type { ValidArtifactVariant } from './definitions.js'
+import type { ValidArtifactVariant, ValidPPOIVariant } from './definitions.js'
 import {
-  ARTIFACT_VARIANT_STRING_PPOI_PREFIX,
   ArtifactName,
   IPFS_GATEWAY,
   PPOI_ARTIFACTS_CID,
   RAILGUN_ARTIFACTS_CID_ROOT,
   VALID_PPOI_ARTIFACT_VARIANT,
-  VALID_RAILGUN_ARTIFACT_VARIANTS,
 } from './definitions.js'
 
 const dbg = debug('ipfs-artifact-fetcher:downloader')
@@ -69,29 +67,6 @@ class ArtifactDownloader {
   }
 
   /**
-   * Validates that the artifact variant string is either a valid PPOI variant or a valid RAILGUN variant.
-   * @param artifactVariantString The variant string to validate.
-   * @throws Error if the variant string is not valid.
-   */
-  #validateArtifactVariant (artifactVariantString: string): void {
-    const isPPOI = this.#isPPOIartifactVariant(artifactVariantString)
-
-    if (isPPOI) {
-      if (!VALID_PPOI_ARTIFACT_VARIANT.includes(artifactVariantString)) {
-        throw new Error(
-          `Invalid PPOI artifact variant: ${artifactVariantString}. Valid variants are: ${VALID_PPOI_ARTIFACT_VARIANT.join(', ')}`
-        )
-      }
-    } else {
-      if (!VALID_RAILGUN_ARTIFACT_VARIANTS.includes(artifactVariantString)) {
-        throw new Error(
-          `Invalid RAILGUN artifact variant: ${artifactVariantString}. Valid variants are: ${VALID_RAILGUN_ARTIFACT_VARIANTS.join(', ')}`
-        )
-      }
-    }
-  }
-
-  /**
    * Decompresses a Brotli-compressed artifact if needed.
    * @param data The raw artifact data.
    * @param artifactName The name of the artifact.
@@ -122,8 +97,6 @@ class ArtifactDownloader {
     zkeyStoredPath: string;
     wasmOrDatStoredPath: string;
   }> {
-    this.#validateArtifactVariant(artifactVariantString)
-
     dbg(`Downloading all artifacts for variant: ${artifactVariantString}`)
 
     const cidRoot = this.#isPPOIartifactVariant(artifactVariantString)
@@ -155,12 +128,17 @@ class ArtifactDownloader {
   }
 
   /**
-   * Returns the directory path for storing downloaded artifacts for a given variant string.
+   * Returns the directory path for storing artifacts based on the artifact variant.
    * @param artifactVariantString The variant string representing the artifact variant.
-   * @returns The directory path for the artifact downloads.
+   * @returns The directory path string for the artifact variant.
    */
-  #artifactDownloadsDir (artifactVariantString: string) {
-    if (artifactVariantString.startsWith(ARTIFACT_VARIANT_STRING_PPOI_PREFIX)) {
+  #artifactDownloadsDir (artifactVariantString: ValidArtifactVariant) {
+    // Validate against path traversal attacks
+    if (artifactVariantString.includes('..') || artifactVariantString.includes('/')) {
+      throw new Error(`Invalid artifact variant: contains path traversal characters: ${artifactVariantString}`)
+    }
+
+    if (this.#isPPOIartifactVariant(artifactVariantString)) {
       return `artifacts-v2.1/ppoi-nov-2-23/${artifactVariantString}`
     }
 
@@ -175,7 +153,7 @@ class ArtifactDownloader {
    */
   #artifactDownloadsPath (
     artifactName: ArtifactName,
-    artifactVariantString: string
+    artifactVariantString: ValidArtifactVariant
   ): string {
     switch (artifactName) {
       case ArtifactName.WASM:
@@ -197,16 +175,9 @@ class ArtifactDownloader {
    */
   #getIPFSpathForArtifactName (
     artifactName: ArtifactName,
-    artifactVariantString: string
+    artifactVariantString: ValidArtifactVariant
   ): string {
     if (this.#isPPOIartifactVariant(artifactVariantString)) {
-      // Check if its a PPOI Artifact and validate if it's a valid one.
-      if (!VALID_PPOI_ARTIFACT_VARIANT.includes(artifactVariantString)) {
-        throw new Error(
-          `Invalid POI artifact variant: ${artifactVariantString}. Only POI_3x3 and POI_13x13 are supported.`
-        )
-      }
-
       // PPOI artifacts
       switch (artifactName) {
         case ArtifactName.WASM:
@@ -234,27 +205,25 @@ class ArtifactDownloader {
   }
 
   /**
-   * Checks if the given artifact variant string is a PPOI artifact variant.
+   * Checks if the given artifact variant string is a valid PPOI variant.
    * @param artifactVariantString The variant string to check.
-   * @returns True if the variant string is a PPOI artifact variant, false otherwise.
+   * @returns True if the variant is a PPOI variant, false otherwise.
    */
-  #isPPOIartifactVariant (artifactVariantString: string) {
-    return artifactVariantString.startsWith(
-      ARTIFACT_VARIANT_STRING_PPOI_PREFIX
-    )
+  #isPPOIartifactVariant (artifactVariantString: ValidArtifactVariant): artifactVariantString is ValidPPOIVariant {
+    return (VALID_PPOI_ARTIFACT_VARIANT as readonly string[]).includes(artifactVariantString)
   }
 
   /**
    * Fetches an artifact from IPFS, decompresses it if necessary, and stores it in the provided artifact store.
    * Includes retry logic with exponential backoff for transient failures (429, 503, 504, timeouts, connection errors).
    * @param rootCid The root CID of the IPFS directory containing the artifacts.
-   * @param artifactVariantString The variant string representing the artifact variant.
+   * @param artifactVariantString The valid artifact variant string.
    * @param artifactName The name of the artifact to fetch.
    * @returns A promise that resolves to the decompressed artifact data.
    */
   async fetchFromIPFS (
     rootCid: string,
-    artifactVariantString: string,
+    artifactVariantString: ValidArtifactVariant,
     artifactName: ArtifactName
   ): Promise<Uint8Array> {
     const storePath = this.#artifactDownloadsPath(
