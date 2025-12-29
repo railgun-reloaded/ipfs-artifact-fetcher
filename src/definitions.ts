@@ -1,3 +1,5 @@
+const IPFS_GATEWAY = 'https://ipfs-lb.com'
+
 const RAILGUN_ARTIFACTS_CID_ROOT =
 'QmUsmnK4PFc7zDp2cmC4wBZxYLjNyRgWfs5GNcJJ2uLcpU'
 
@@ -59,4 +61,4 @@ type StoreArtifact = (
 type ArtifactExists = (path: string) => Promise<boolean>
 
 export type { GetArtifact, StoreArtifact, ArtifactExists, Artifact, ValidArtifactVariant, ValidPPOIVariant, ValidRailgunVariant }
-export { RAILGUN_ARTIFACTS_CID_ROOT, PPOI_ARTIFACTS_CID, VALID_PPOI_ARTIFACT_VARIANT, VALID_RAILGUN_ARTIFACT_VARIANTS, ARTIFACT_VARIANT_STRING_PPOI_PREFIX, ArtifactName }
+export { IPFS_GATEWAY, RAILGUN_ARTIFACTS_CID_ROOT, PPOI_ARTIFACTS_CID, VALID_PPOI_ARTIFACT_VARIANT, VALID_RAILGUN_ARTIFACT_VARIANTS, ARTIFACT_VARIANT_STRING_PPOI_PREFIX, ArtifactName }
