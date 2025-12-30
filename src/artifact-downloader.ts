@@ -1,19 +1,26 @@
+import { basename } from 'node:path'
+
 import type { VerifiedFetch } from '@helia/verified-fetch'
 import { createVerifiedFetch } from '@helia/verified-fetch'
 import { decompress as brotliDecompress } from 'brotli'
 import debug from 'debug'
-import type { Helia } from 'helia'
 import { CID } from 'multiformats/cid'
 
 import type { ArtifactStore } from './artifact-store.js'
-import type { ValidArtifactVariant, ValidPPOIVariant } from './definitions.js'
+import type { ArtifactDownloaderOptions, RetryOptions, ValidArtifactVariant, ValidPPOIVariant } from './definitions.js'
 import {
   ArtifactName,
+  DEFAULT_RETRY_OPTIONS,
   IPFS_GATEWAY,
   PPOI_ARTIFACTS_CID,
   RAILGUN_ARTIFACTS_CID_ROOT,
   VALID_PPOI_ARTIFACT_VARIANT,
 } from './definitions.js'
+import {
+  ipfsRetryHandler,
+  isRetryableStatusCode,
+  withRetry,
+} from './retry-utils.js'
 
 const dbg = debug('ipfs-artifact-fetcher:downloader')
 
@@ -21,30 +28,31 @@ const dbg = debug('ipfs-artifact-fetcher:downloader')
  * ArtifactDownloader class for managing IPFS artifact downloads with caching
  */
 class ArtifactDownloader {
-  /** The Helia instance for managing IPFS lifecycle */
-  #helia: Helia | undefined
   /** The verified fetch instance for trustless IPFS retrieval */
   #verifiedFetch: VerifiedFetch | undefined
   /** The artifact cache instance */
   #artifactStore: ArtifactStore
   /**
-   * Indicates whether to use native artifacts (e.g., .dat files) instead of WASM.
+   * Indicates whether to use native artifacts, if true will fetch .DAT files instead of WASM.
    */
   #useNativeArtifacts: boolean
+  /**
+   * Maximum number of retry attempts for failed fetches.
+   */
+  #maxRetries: number
 
   /**
    * Creates an instance of ArtifactDownloader to manage IPFS artifact downloads and caching.
-   * @param artifactStore The artifact cache instance.
-   * @param useNativeArtifacts Indicates whether to use native artifacts (e.g., .dat files) instead of WASM.
+   * @param options Configuration options for the downloader.
    */
-  constructor (artifactStore: ArtifactStore, useNativeArtifacts: boolean) {
-    this.#artifactStore = artifactStore
-    this.#useNativeArtifacts = useNativeArtifacts
+  constructor (options: ArtifactDownloaderOptions) {
+    this.#artifactStore = options.artifactStore
+    this.#useNativeArtifacts = options.useNativeArtifacts
+    this.#maxRetries = options.maxRetries ?? DEFAULT_RETRY_OPTIONS.maxRetries
   }
 
   /**
    * Initializes the verified fetch instance if it is not already initialized.
-   * Creates and manages a Helia instance for lifecycle management.
    * @throws Error if initialization fails
    */
   async #initVerifiedFetch (): Promise<void> {
@@ -103,13 +111,15 @@ class ArtifactDownloader {
       ? PPOI_ARTIFACTS_CID
       : RAILGUN_ARTIFACTS_CID_ROOT
 
-    await this.fetchFromIPFS(cidRoot, artifactVariantString, ArtifactName.VKEY)
-    await this.fetchFromIPFS(cidRoot, artifactVariantString, ArtifactName.ZKEY)
-    await this.fetchFromIPFS(
-      cidRoot,
-      artifactVariantString,
-      this.#useNativeArtifacts ? ArtifactName.DAT : ArtifactName.WASM
-    )
+    await Promise.all([
+      this.fetchFromIPFS(cidRoot, artifactVariantString, ArtifactName.VKEY),
+      this.fetchFromIPFS(cidRoot, artifactVariantString, ArtifactName.ZKEY),
+      this.fetchFromIPFS(
+        cidRoot,
+        artifactVariantString,
+        this.#useNativeArtifacts ? ArtifactName.DAT : ArtifactName.WASM
+      )
+    ])
 
     return {
       vkeyStoredPath: this.#artifactDownloadsPath(
@@ -133,8 +143,8 @@ class ArtifactDownloader {
    * @returns The directory path string for the artifact variant.
    */
   #artifactDownloadsDir (artifactVariantString: ValidArtifactVariant) {
-    // Validate against path traversal attacks
-    if (artifactVariantString.includes('..') || artifactVariantString.includes('/')) {
+    // Validate against path traversal attacks by ensuring the string is a simple filename
+    if (basename(artifactVariantString) !== artifactVariantString) {
       throw new Error(`Invalid artifact variant: contains path traversal characters: ${artifactVariantString}`)
     }
 
@@ -231,7 +241,7 @@ class ArtifactDownloader {
       artifactVariantString
     )
 
-    // Check if the artifact already exists in the store
+    // Check if the artifact is already stored
     if (await this.#artifactStore.exists(storePath)) {
       dbg(
         `Already stored ${artifactName} artifact for variant (${artifactVariantString}) - reading from cache`
@@ -246,8 +256,6 @@ class ArtifactDownloader {
 
     await this.#initVerifiedFetch()
 
-    if (!this.#verifiedFetch) throw new Error('Verified fetch not initialized')
-
     const cid = CID.parse(rootCid)
     const ipfsPath = this.#getIPFSpathForArtifactName(
       artifactName,
@@ -256,24 +264,24 @@ class ArtifactDownloader {
 
     const ipfsUrl = `ipfs://${cid.toString()}/${ipfsPath}`
 
+    const retryOptions: RetryOptions = {
+      maxRetries: this.#maxRetries,
+      shouldRetry: ipfsRetryHandler
+    }
+
     dbg(`Fetching from IPFS URL: ${ipfsUrl}`)
 
-    const maxRetries = 5
-    let lastError: Error | undefined
+    try {
+      return await withRetry(async () => {
+        if (!this.#verifiedFetch) throw new Error('Verified fetch not initialized')
 
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        // Use verified fetch with the IPFS URL
         const response = await this.#verifiedFetch(ipfsUrl)
 
         if (!response.ok) {
           const statusCode = response.status
-          // Retry on 429 (rate limit), 503/504 (service unavailable/gateway timeout)
-          if ([429, 503, 504].includes(statusCode) && attempt < maxRetries) {
-            const delay = Math.pow(2, attempt) * 1_000 // exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s
-            dbg(`Fetch failed with ${statusCode}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`)
-            await new Promise(resolve => setTimeout(resolve, delay))
-            continue
+
+          if (isRetryableStatusCode(statusCode)) {
+            throw new Error(`Retryable fetch error status:${statusCode} ${response.statusText}`)
           }
           throw new Error(`Failed to fetch: ${statusCode} ${response.statusText}`)
         }
@@ -296,36 +304,24 @@ class ArtifactDownloader {
         dbg(`Successfully fetched and stored ${artifactName} artifact for variant (${artifactVariantString}) - ${decompressedArtifact.length} bytes`)
 
         return decompressedArtifact
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error))
-
-        if (attempt < maxRetries) {
-          const delay = Math.pow(2, attempt) * 1000 // exponential backoff
-          dbg(`Fetch attempt ${attempt + 1} failed: ${lastError.message}, retrying in ${delay}ms`)
-          await new Promise(resolve => setTimeout(resolve, delay))
-        }
-      }
+      }, retryOptions)
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      throw new Error(
+        `IPFS fetch failed for ${artifactName} (${artifactVariantString}) after ${this.#maxRetries + 1} attempts: ${errorMessage}`
+      )
     }
-
-    throw new Error(
-      `IPFS fetch failed for ${artifactName} (${artifactVariantString}) after ${maxRetries + 1} attempts: ${
-        lastError?.message ?? 'Unknown error'
-      }`
-    )
   }
 
   /**
-   * Stops the Helia instance and cleans up resources
+   * Stops the verified fetch instance and cleans up resources.
    */
   async stop (): Promise<void> {
-    if (this.#helia) {
-      dbg('Stopping Helia instance...')
-      await this.#helia.stop()
-      this.#helia = undefined
+    if (this.#verifiedFetch) {
+      dbg('Stopping Helia verified fetch instance...')
+      await this.#verifiedFetch.stop()
       this.#verifiedFetch = undefined
-      dbg('Helia instance stopped')
-    } else {
-      dbg('Helia instance not initialized')
+      dbg('Helia verified fetch instance stopped')
     }
   }
 }

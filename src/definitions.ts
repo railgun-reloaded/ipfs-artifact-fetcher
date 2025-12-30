@@ -1,3 +1,7 @@
+import type { ArtifactStore } from './artifact-store.js'
+
+/* Artifact Downloader Definitions */
+
 const IPFS_GATEWAY = 'https://ipfs-lb.com'
 
 const RAILGUN_ARTIFACTS_CID_ROOT =
@@ -33,6 +37,15 @@ type ValidPPOIVariant = (typeof VALID_PPOI_ARTIFACT_VARIANT)[number]
 type ValidRailgunVariant = (typeof VALID_RAILGUN_ARTIFACT_VARIANTS)[number]
 type ValidArtifactVariant = ValidPPOIVariant | ValidRailgunVariant
 
+type ArtifactDownloaderOptions = {
+  /** The artifact cache instance */
+  artifactStore: ArtifactStore
+  /** Indicates whether to use native artifacts, .DAT files instead of .WASM */
+  useNativeArtifacts: boolean
+  /** Maximum number of retry attempts for failed fetches (default: 5) */
+  maxRetries?: number
+}
+
 enum ArtifactName {
   ZKEY = 'zkey',
   WASM = 'wasm',
@@ -47,6 +60,8 @@ type Artifact = {
   vkey: Uint8Array;
 }
 
+/* Artifact Store Definitions */
+
 type GetArtifact = (path: string) => Promise<Uint8Array | null>
 
 type StoreArtifact = (
@@ -57,5 +72,31 @@ type StoreArtifact = (
 
 type ArtifactExists = (path: string) => Promise<boolean>
 
-export type { GetArtifact, StoreArtifact, ArtifactExists, Artifact, ValidArtifactVariant, ValidPPOIVariant, ValidRailgunVariant }
-export { IPFS_GATEWAY, RAILGUN_ARTIFACTS_CID_ROOT, PPOI_ARTIFACTS_CID, VALID_PPOI_ARTIFACT_VARIANT, VALID_RAILGUN_ARTIFACT_VARIANTS, ARTIFACT_VARIANT_STRING_PPOI_PREFIX, ArtifactName }
+/* Retry Utils Definitions */
+
+type RetryOptions = {
+  /** Maximum number of retry attempts (default: 5) */
+  maxRetries?: number
+  /** Base delay in milliseconds for exponential backoff (default: 1000) */
+  baseDelayMs?: number
+  /** Whether to add jitter to prevent thundering herd (default: true) */
+  addJitter?: boolean
+  /** Function to determine if an error should trigger a retry */
+  shouldRetry?: (error: unknown) => boolean
+}
+
+const DEFAULT_RETRY_OPTIONS: Required<RetryOptions> = {
+  maxRetries: 5,
+  baseDelayMs: 1000,
+  addJitter: true,
+  /**
+   * Default shouldRetry function - always returns true to retry on any error.
+   * @returns True to always retry
+   */
+  shouldRetry: () => true
+}
+
+const RETRYABLE_STATUS_CODES = [429, 503, 504] as const
+
+export type { ArtifactDownloaderOptions, GetArtifact, StoreArtifact, ArtifactExists, Artifact, ValidArtifactVariant, ValidPPOIVariant, ValidRailgunVariant, RetryOptions }
+export { IPFS_GATEWAY, RAILGUN_ARTIFACTS_CID_ROOT, PPOI_ARTIFACTS_CID, VALID_PPOI_ARTIFACT_VARIANT, VALID_RAILGUN_ARTIFACT_VARIANTS, ARTIFACT_VARIANT_STRING_PPOI_PREFIX, DEFAULT_RETRY_OPTIONS, RETRYABLE_STATUS_CODES, ArtifactName }
