@@ -41,8 +41,10 @@ describe('artifact-downloader for snarkjs artifacts', { timeout: 2000000 }, () =
   let downloader: ArtifactDownloader
 
   before(() => {
-    const useNativeArtifacts = false
-    downloader = new ArtifactDownloader(testArtifactStore, useNativeArtifacts)
+    downloader = new ArtifactDownloader({
+      artifactStore: testArtifactStore,
+      useNativeArtifacts: false
+    })
   })
 
   after(async () => {
@@ -131,8 +133,10 @@ describe('artifact-downloader for native artifacts', { timeout: 200000 }, () => 
   let downloader: ArtifactDownloader
 
   before(() => {
-    const useNativeArtifacts = true
-    downloader = new ArtifactDownloader(testArtifactStore, useNativeArtifacts)
+    downloader = new ArtifactDownloader({
+      artifactStore: testArtifactStore,
+      useNativeArtifacts: true
+    })
   })
 
   after(async () => {
