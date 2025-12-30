@@ -37,191 +37,202 @@ const testArtifactStore = new ArtifactStore(
   fileExists
 )
 
-describe('artifact-downloader for snarkjs artifacts', { timeout: 2000000 }, () => {
-  let downloader: ArtifactDownloader
-
-  before(() => {
-    downloader = new ArtifactDownloader({
-      artifactStore: testArtifactStore,
-      useNativeArtifacts: false
+describe('Artifact Downloader', () => {
+  // Handle graceful shutdown after all tests are completed
+  after(() => {
+    // Force process exit since Helia leaves some handles open even after calling .stop() method
+    // Use setImmediate to allow test runner to finish printing output before exiting
+    setImmediate(() => {
+      process.exit(0)
     })
   })
 
-  after(async () => {
-    await downloader.stop()
-  })
+  describe('Handle download of snarkjs artifacts', () => {
+    let downloader: ArtifactDownloader
 
-  it('should download RAILGUN 01x01 artifacts and verify vkey matches local file', async () => {
-    const artifactVariantString: ValidArtifactVariant = '01x01'
-    const {
-      vkeyStoredPath,
-      zkeyStoredPath,
-      wasmOrDatStoredPath
-    } = await downloader.downloadArtifactsForVariant(artifactVariantString)
+    before(() => {
+      downloader = new ArtifactDownloader({
+        artifactStore: testArtifactStore,
+        useNativeArtifacts: false
+      })
+    })
 
-    // Verify we got the expected artifacts
-    assert.ok(vkeyStoredPath, 'vkey should be defined')
-    assert.ok(zkeyStoredPath, 'zkey should be defined')
-    assert.ok(wasmOrDatStoredPath, 'wasm should be defined')
+    after(async () => {
+      await downloader.stop()
+    })
 
-    // Assert that the downloaded file name is 'wasm' since we are using snarkjs artifacts
-    const fileName = wasmOrDatStoredPath.split('/').pop() || ''
-    assert.ok(fileName === 'wasm', `Downloaded file name should be 'wasm' got: ${fileName}`)
+    it('should download RAILGUN 01x01 artifacts and verify vkey matches local file', async () => {
+      const artifactVariantString: ValidArtifactVariant = '01x01'
+      const {
+        vkeyStoredPath,
+        zkeyStoredPath,
+        wasmOrDatStoredPath
+      } = await downloader.downloadArtifactsForVariant(artifactVariantString)
 
-    // Get downloaded and local artifacts
-    const localArtifactPath = join(__dirname, '01x01-vkey.json')
-    const localArtifact = await readFile(localArtifactPath)
-    const downloadedArtifact = await readFile(vkeyStoredPath)
+      // Verify we got the expected artifacts
+      assert.ok(vkeyStoredPath, 'vkey should be defined')
+      assert.ok(zkeyStoredPath, 'zkey should be defined')
+      assert.ok(wasmOrDatStoredPath, 'wasm should be defined')
 
-    // Transform both files for comparison
-    const transformedLocalArtifact = new TextDecoder().decode(localArtifact)
-    const transformedDownloadedArtifact = new TextDecoder().decode(downloadedArtifact)
-    const downloadedArtifactJson = JSON.parse(transformedDownloadedArtifact)
-    const localArtifactJson = JSON.parse(transformedLocalArtifact)
+      // Assert that the downloaded file name is 'wasm' since we are using snarkjs artifacts
+      const fileName = wasmOrDatStoredPath.split('/').pop() || ''
+      assert.ok(fileName === 'wasm', `Downloaded file name should be 'wasm' got: ${fileName}`)
 
-    assert.deepStrictEqual(downloadedArtifactJson, localArtifactJson, 'Downloaded vkey does not match local artifact')
-  })
+      // Get downloaded and local artifacts
+      const localArtifactPath = join(__dirname, '01x01-vkey.json')
+      const localArtifact = await readFile(localArtifactPath)
+      const downloadedArtifact = await readFile(vkeyStoredPath)
 
-  it('should download PPOI 3x3 artifacts and verify vkey matches local file', async () => {
-    const artifactVariantString: ValidArtifactVariant = `${ARTIFACT_VARIANT_STRING_PPOI_PREFIX}_3x3`
-    const {
-      vkeyStoredPath,
-      zkeyStoredPath,
-      wasmOrDatStoredPath
-    } = await downloader.downloadArtifactsForVariant(artifactVariantString)
+      // Transform both files for comparison
+      const transformedLocalArtifact = new TextDecoder().decode(localArtifact)
+      const transformedDownloadedArtifact = new TextDecoder().decode(downloadedArtifact)
+      const downloadedArtifactJson = JSON.parse(transformedDownloadedArtifact)
+      const localArtifactJson = JSON.parse(transformedLocalArtifact)
 
-    // Verify we got the expected artifacts
-    assert.ok(vkeyStoredPath, 'PPOI vkey should be defined')
-    assert.ok(zkeyStoredPath, 'PPOI zkey should be defined')
-    assert.ok(wasmOrDatStoredPath, 'PPOI wasm should be defined')
+      assert.deepStrictEqual(downloadedArtifactJson, localArtifactJson, 'Downloaded vkey does not match local artifact')
+    })
 
-    // Get downloaded and local artifacts
-    const localArtifactPath = join(__dirname, '3x3-vkey-PPOI.json')
-    const localArtifact = await readFile(localArtifactPath)
-    const downloadedFile = await readFile(vkeyStoredPath)
+    it('should download PPOI 3x3 artifacts and verify vkey matches local file', async () => {
+      const artifactVariantString: ValidArtifactVariant = `${ARTIFACT_VARIANT_STRING_PPOI_PREFIX}_3x3`
+      const {
+        vkeyStoredPath,
+        zkeyStoredPath,
+        wasmOrDatStoredPath
+      } = await downloader.downloadArtifactsForVariant(artifactVariantString)
 
-    // Transform both files for comparison
-    const transformedLocalArtifact = new TextDecoder().decode(localArtifact)
-    const transformedDownloadedArtifact = new TextDecoder().decode(downloadedFile)
-    const downloadedArtifactJson = JSON.parse(transformedDownloadedArtifact)
-    const localArtifactJson = JSON.parse(transformedLocalArtifact)
+      // Verify we got the expected artifacts
+      assert.ok(vkeyStoredPath, 'PPOI vkey should be defined')
+      assert.ok(zkeyStoredPath, 'PPOI zkey should be defined')
+      assert.ok(wasmOrDatStoredPath, 'PPOI wasm should be defined')
 
-    assert.deepStrictEqual(downloadedArtifactJson, localArtifactJson, 'Downloaded vkey does not match local artifact')
-  })
+      // Get downloaded and local artifacts
+      const localArtifactPath = join(__dirname, '3x3-vkey-PPOI.json')
+      const localArtifact = await readFile(localArtifactPath)
+      const downloadedFile = await readFile(vkeyStoredPath)
 
-  it('should use already stored artifacts', async () => {
-    const artifactVariantStrings: ValidArtifactVariant[] = ['01x01', `${ARTIFACT_VARIANT_STRING_PPOI_PREFIX}_3x3`]
+      // Transform both files for comparison
+      const transformedLocalArtifact = new TextDecoder().decode(localArtifact)
+      const transformedDownloadedArtifact = new TextDecoder().decode(downloadedFile)
+      const downloadedArtifactJson = JSON.parse(transformedDownloadedArtifact)
+      const localArtifactJson = JSON.parse(transformedLocalArtifact)
 
-    // Download artifacts for both variants
-    for (const variant of artifactVariantStrings) {
-      await downloader.downloadArtifactsForVariant(variant)
-    }
+      assert.deepStrictEqual(downloadedArtifactJson, localArtifactJson, 'Downloaded vkey does not match local artifact')
+    })
 
-    // Measure time for re-downloading (should use already stored artifacts)
-    const start = process.hrtime.bigint()
-    for (const variant of artifactVariantStrings) {
-      await downloader.downloadArtifactsForVariant(variant)
-    }
-    const end = process.hrtime.bigint()
-    const durationMs = Number(end - start) / 1_000_000 // Convert nanoseconds to milliseconds
+    it('should use already stored artifacts', async () => {
+      const artifactVariantStrings: ValidArtifactVariant[] = ['01x01', `${ARTIFACT_VARIANT_STRING_PPOI_PREFIX}_3x3`]
 
-    assert.ok(durationMs < 1000, `Artifacts should be fetched from cache in <1s, got ${durationMs.toFixed(2)}ms`)
-  })
-})
+      // Download artifacts for both variants
+      for (const variant of artifactVariantStrings) {
+        await downloader.downloadArtifactsForVariant(variant)
+      }
 
-describe('artifact-downloader for native artifacts', { timeout: 200000 }, () => {
-  let downloader: ArtifactDownloader
+      // Measure time for re-downloading (should use already stored artifacts)
+      const start = process.hrtime.bigint()
+      for (const variant of artifactVariantStrings) {
+        await downloader.downloadArtifactsForVariant(variant)
+      }
+      const end = process.hrtime.bigint()
+      const durationMs = Number(end - start) / 1_000_000 // Convert nanoseconds to milliseconds
 
-  before(() => {
-    downloader = new ArtifactDownloader({
-      artifactStore: testArtifactStore,
-      useNativeArtifacts: true
+      assert.ok(durationMs < 1000, `Artifacts should be fetched from cache in <1s, got ${durationMs.toFixed(2)}ms`)
     })
   })
 
-  after(async () => {
-    await downloader.stop()
-  })
+  describe('Handle download of native artifacts', () => {
+    let downloader: ArtifactDownloader
 
-  it('should download RAILGUN 01x01 artifacts and verify vkey matches local file', async () => {
-    const artifactVariantString: ValidArtifactVariant = '01x01'
-    const {
-      vkeyStoredPath,
-      zkeyStoredPath,
-      wasmOrDatStoredPath
-    } = await downloader.downloadArtifactsForVariant(artifactVariantString)
+    before(() => {
+      downloader = new ArtifactDownloader({
+        artifactStore: testArtifactStore,
+        useNativeArtifacts: true
+      })
+    })
 
-    // Verify we got the expected artifacts
-    assert.ok(vkeyStoredPath, 'vkey should be defined')
-    assert.ok(zkeyStoredPath, 'zkey should be defined')
-    assert.ok(wasmOrDatStoredPath, 'wasm should be defined')
+    after(async () => {
+      await downloader.stop()
+    })
 
-    // Assert that the downloaded file name is 'dat' since we are using native artifacts
-    const fileName = wasmOrDatStoredPath.split('/').pop() || ''
-    assert.ok(fileName === 'dat', `Downloaded file name should be 'dat' got: ${fileName}`)
+    it('should download RAILGUN 01x01 artifacts and verify vkey matches local file', async () => {
+      const artifactVariantString: ValidArtifactVariant = '01x01'
+      const {
+        vkeyStoredPath,
+        zkeyStoredPath,
+        wasmOrDatStoredPath
+      } = await downloader.downloadArtifactsForVariant(artifactVariantString)
 
-    // Get downloaded and local artifacts
-    const localArtifactPath = join(__dirname, '01x01-vkey.json')
-    const localArtifact = await readFile(localArtifactPath)
-    const downloadedArtifact = await readFile(vkeyStoredPath)
+      // Verify we got the expected artifacts
+      assert.ok(vkeyStoredPath, 'vkey should be defined')
+      assert.ok(zkeyStoredPath, 'zkey should be defined')
+      assert.ok(wasmOrDatStoredPath, 'wasm should be defined')
 
-    // Transform both files for comparison
-    const transformedLocalArtifact = new TextDecoder().decode(localArtifact)
-    const transformedDownloadedArtifact = new TextDecoder().decode(downloadedArtifact)
-    const downloadedArtifactJson = JSON.parse(transformedDownloadedArtifact)
-    const localArtifactJson = JSON.parse(transformedLocalArtifact)
+      // Assert that the downloaded file name is 'dat' since we are using native artifacts
+      const fileName = wasmOrDatStoredPath.split('/').pop() || ''
+      assert.ok(fileName === 'dat', `Downloaded file name should be 'dat' got: ${fileName}`)
 
-    assert.deepStrictEqual(downloadedArtifactJson, localArtifactJson, 'Downloaded vkey does not match local artifact')
-  })
+      // Get downloaded and local artifacts
+      const localArtifactPath = join(__dirname, '01x01-vkey.json')
+      const localArtifact = await readFile(localArtifactPath)
+      const downloadedArtifact = await readFile(vkeyStoredPath)
 
-  it('should download PPOI 3x3 artifacts and verify vkey matches local file', async () => {
-    const artifactVariantString: ValidArtifactVariant = `${ARTIFACT_VARIANT_STRING_PPOI_PREFIX}_3x3`
-    const {
-      vkeyStoredPath,
-      zkeyStoredPath,
-      wasmOrDatStoredPath
-    } = await downloader.downloadArtifactsForVariant(artifactVariantString)
+      // Transform both files for comparison
+      const transformedLocalArtifact = new TextDecoder().decode(localArtifact)
+      const transformedDownloadedArtifact = new TextDecoder().decode(downloadedArtifact)
+      const downloadedArtifactJson = JSON.parse(transformedDownloadedArtifact)
+      const localArtifactJson = JSON.parse(transformedLocalArtifact)
 
-    // Verify we got the expected artifacts
-    assert.ok(vkeyStoredPath, 'PPOI vkey should be defined')
-    assert.ok(zkeyStoredPath, 'PPOI zkey should be defined')
-    assert.ok(wasmOrDatStoredPath, 'PPOI wasm should be defined')
+      assert.deepStrictEqual(downloadedArtifactJson, localArtifactJson, 'Downloaded vkey does not match local artifact')
+    })
 
-    // Get downloaded and local artifacts
-    const localArtifactPath = join(__dirname, '3x3-vkey-PPOI.json')
-    const localArtifact = await readFile(localArtifactPath)
-    const downloadedFile = await readFile(vkeyStoredPath)
+    it('should download PPOI 3x3 artifacts and verify vkey matches local file', async () => {
+      const artifactVariantString: ValidArtifactVariant = `${ARTIFACT_VARIANT_STRING_PPOI_PREFIX}_3x3`
+      const {
+        vkeyStoredPath,
+        zkeyStoredPath,
+        wasmOrDatStoredPath
+      } = await downloader.downloadArtifactsForVariant(artifactVariantString)
 
-    // Transform both files for comparison
-    const transformedLocalArtifact = new TextDecoder().decode(localArtifact)
-    const transformedDownloadedArtifact = new TextDecoder().decode(downloadedFile)
-    const downloadedArtifactJson = JSON.parse(transformedDownloadedArtifact)
-    const localArtifactJson = JSON.parse(transformedLocalArtifact)
+      // Verify we got the expected artifacts
+      assert.ok(vkeyStoredPath, 'PPOI vkey should be defined')
+      assert.ok(zkeyStoredPath, 'PPOI zkey should be defined')
+      assert.ok(wasmOrDatStoredPath, 'PPOI wasm should be defined')
 
-    assert.deepStrictEqual(downloadedArtifactJson, localArtifactJson, 'Downloaded vkey does not match local artifact')
-  })
+      // Get downloaded and local artifacts
+      const localArtifactPath = join(__dirname, '3x3-vkey-PPOI.json')
+      const localArtifact = await readFile(localArtifactPath)
+      const downloadedFile = await readFile(vkeyStoredPath)
 
-  it('should download PPOI 3x3 native artifact', async () => {
-    const artifactVariantString: ValidArtifactVariant = `${ARTIFACT_VARIANT_STRING_PPOI_PREFIX}_3x3`
-    const file = await downloader.fetchFromIPFS(
-      PPOI_ARTIFACTS_CID,
-      artifactVariantString,
-      ArtifactName.DAT
-    )
+      // Transform both files for comparison
+      const transformedLocalArtifact = new TextDecoder().decode(localArtifact)
+      const transformedDownloadedArtifact = new TextDecoder().decode(downloadedFile)
+      const downloadedArtifactJson = JSON.parse(transformedDownloadedArtifact)
+      const localArtifactJson = JSON.parse(transformedLocalArtifact)
 
-    console.log('Downloaded PPOI 3x3 dat artifact size:', file.length)
-    assert.ok(file.length > 0, 'Downloaded PPOI 3x3 dat artifact should have content')
-  })
+      assert.deepStrictEqual(downloadedArtifactJson, localArtifactJson, 'Downloaded vkey does not match local artifact')
+    })
 
-  it('should download RAILGUN 01x01 native artifact', async () => {
-    const artifactVariantString: ValidArtifactVariant = '01x01'
-    const file = await downloader.fetchFromIPFS(
-      RAILGUN_ARTIFACTS_CID_ROOT,
-      artifactVariantString,
-      ArtifactName.DAT
-    )
+    it('should download PPOI 3x3 native artifact', async () => {
+      const artifactVariantString: ValidArtifactVariant = `${ARTIFACT_VARIANT_STRING_PPOI_PREFIX}_3x3`
+      const file = await downloader.fetchFromIPFS(
+        PPOI_ARTIFACTS_CID,
+        artifactVariantString,
+        ArtifactName.DAT
+      )
 
-    console.log('Downloaded RAILGUN 01x01 dat artifact size:', file.length)
-    assert.ok(file.length > 0, 'Downloaded RAILGUN 01x01 dat artifact should have content')
+      console.log('Downloaded PPOI 3x3 dat artifact size:', file.length)
+      assert.ok(file.length > 0, 'Downloaded PPOI 3x3 dat artifact should have content')
+    })
+
+    it('should download RAILGUN 01x01 native artifact', async () => {
+      const artifactVariantString: ValidArtifactVariant = '01x01'
+      const file = await downloader.fetchFromIPFS(
+        RAILGUN_ARTIFACTS_CID_ROOT,
+        artifactVariantString,
+        ArtifactName.DAT
+      )
+
+      console.log('Downloaded RAILGUN 01x01 dat artifact size:', file.length)
+      assert.ok(file.length > 0, 'Downloaded RAILGUN 01x01 dat artifact should have content')
+    })
   })
 })
