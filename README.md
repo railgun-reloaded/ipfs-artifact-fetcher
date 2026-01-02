@@ -63,12 +63,16 @@ const artifactStore = new ArtifactStore(
 import { ArtifactDownloader } from 'ipfs-artifact-fetcher'
 
 // For WASM artifacts (web/JavaScript environments)
-const useNativeArtifacts = false
-const downloader = new ArtifactDownloader(artifactStore, useNativeArtifacts)
+const downloader = new ArtifactDownloader({
+  artifactStore,
+  useNativeArtifacts: false
+})
 
 // For native artifacts (Node.js/native environments)
-const useNativeArtifacts = true
-const nativeDownloader = new ArtifactDownloader(artifactStore, useNativeArtifacts)
+const nativeDownloader = new ArtifactDownloader({
+  artifactStore,
+  useNativeArtifacts: true
+})
 ```
 
 ### 3. Downloading Artifacts
@@ -100,7 +104,10 @@ Always call the `stop()` method when you're finished using the `ArtifactDownload
 - **Datastore Sync**: Ensures pending writes are flushed to prevent data consistency issues on restart.
 
 ```typescript
-const downloader = new ArtifactDownloader(store, useNativeArtifacts);
+const downloader = new ArtifactDownloader({
+  artifactStore: store,
+  useNativeArtifacts: false
+});
 
 try {
   // Use the downloader
